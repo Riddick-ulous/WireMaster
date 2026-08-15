@@ -65,6 +65,14 @@ button:disabled { opacity: .38; }
 .tabulator-row:nth-child(even) { background: #121820 !important; }
 .tabulator-row .tabulator-cell { border-right-color: #252e39 !important; padding: 7px 8px !important; color: #d9e0eb !important; }
 .tabulator-row .tabulator-cell.tabulator-editing { background: #222a36 !important; border-color: #7d63ff !important; }
+.tabulator-row .tabulator-cell.tabulator-editing input,
+.tabulator-row .tabulator-cell.tabulator-editing textarea {
+  color: #e8edf7 !important;
+  background: #10151c !important;
+  caret-color: #e8edf7;
+  border: 0;
+  outline: 0;
+}
 
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; grid-template-rows: 52% 48%; }
