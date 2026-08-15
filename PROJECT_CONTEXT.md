@@ -1,7 +1,7 @@
 # WireMaster – Project Context
 
 ## Current stage
-M0.1 bootstrap / vertical slice.
+M0.1 bootstrap / vertical slice — CI hardening.
 
 ## Non-negotiable invariants
 - Domain model is the single source of truth; editor/viewer are views.
@@ -37,9 +37,15 @@ Tauri
 - wire ID/color rendered in viewer
 - connector selection viewer -> editor
 - net highlighting
-- 30-step transactional undo/redo
+- 30-step transactional undo/redo, including Ctrl+Z/Ctrl+Y outside active cell editors
+- range paste is committed to the domain as one bulk transaction
 - JSON serialize/deserialize
 - automated core tests
+
+## Current hardening status
+- Core regression tests were green before the first build-fix pass.
+- Initial TypeScript build failures were localized to Tabulator event wiring, endpoint type narrowing, and node tsconfig emit settings.
+- Fixes are committed on `m0.1-bootstrap`; CI must be green before M0.1 is declared review-ready.
 
 ## Read before each stage
 1. `docs/requirements_mvp.md`
