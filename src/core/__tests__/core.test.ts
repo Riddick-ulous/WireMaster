@@ -40,7 +40,7 @@ describe('resolver reconciliation', () => {
   it('never clears a net assignment on a newly added connector during reconciliation', () => {
     const project = createDemoProject();
     const harness = project.subHarnesses[0];
-    const existingNet = project.nets.find((net) => net.name === 'CAN_H')!;
+    const existingNet = project.nets.find((net) => net.name === 'CAN1_H')!;
     const connector = addGenericConnector(project, harness.id, 4);
     const pin = connector.pins[0];
 
