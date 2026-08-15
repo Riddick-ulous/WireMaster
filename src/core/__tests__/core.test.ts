@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveProperty } from '../inheritance';
-import { applyPinEdits, assignPinNetByName } from '../project';
+import { addGenericConnector, applyPinEdits, assignPinNetByName } from '../project';
 import { reconcileProject } from '../resolver';
 import { createDemoProject } from '../sample';
 import { TransactionHistory } from '../transactions';
@@ -35,6 +35,21 @@ describe('resolver reconciliation', () => {
     reconcileProject(project);
     expect(wireIds(project)).toEqual(originalIds);
     expect(broken.status).toBe('ACTIVE');
+  });
+
+  it('never clears a net assignment on a newly added connector during reconciliation', () => {
+    const project = createDemoProject();
+    const harness = project.subHarnesses[0];
+    const existingNet = project.nets.find((net) => net.name === 'CAN_H')!;
+    const connector = addGenericConnector(project, harness.id, 4);
+    const pin = connector.pins[0];
+
+    assignPinNetByName(project, pin.id, existingNet.name);
+    reconcileProject(project);
+
+    expect(pin.netId).toBe(existingNet.id);
+    expect(existingNet.connectivityStatus).toBe('UNRESOLVED');
+    expect(project.nets.filter((net) => net.name === existingNet.name)).toHaveLength(1);
   });
 });
 
