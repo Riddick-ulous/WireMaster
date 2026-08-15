@@ -51,8 +51,25 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
     const host = tableHost.current;
     if (!host) return;
 
-    let pasteInProgress = false;
-    const markPasteStart = () => { pasteInProgress = true; };
+    let rangePasteInProgress = false;
+    let pasteResetTimer: number | null = null;
+
+    const markPasteStart = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isCellEditor = Boolean(target?.closest('.tabulator-editing'))
+        || target?.matches('input, textarea') === true;
+
+      // Pasting into an open input is a normal cell edit. Only suppress the
+      // per-cell callbacks when Tabulator itself is handling a selected range.
+      if (isCellEditor) return;
+
+      rangePasteInProgress = true;
+      if (pasteResetTimer !== null) window.clearTimeout(pasteResetTimer);
+      pasteResetTimer = window.setTimeout(() => {
+        rangePasteInProgress = false;
+        pasteResetTimer = null;
+      }, 0);
+    };
     host.addEventListener('paste', markPasteStart, true);
 
     const table = new Tabulator(host, {
@@ -60,16 +77,24 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       index: 'id',
       layout: 'fitColumns',
       height: Math.min(340, 42 + connector.pins.length * 34),
-      // Range selection and the default focus-triggered editor can fight over focus,
-      // especially inside a WebView. Make editing deterministic: one click opens
-      // the editor, while click-drag still establishes a range for copy/paste.
-      editTriggerEvent: 'click',
+
+      // Spreadsheet interaction: a single click selects/focuses a cell or
+      // starts a drag range; a double click opens the text editor.
+      editTriggerEvent: 'dblclick',
+      editorEmptyValue: undefined,
       selectableRange: 1,
       selectableRangeColumns: true,
       selectableRangeRows: true,
-      selectableRangeAutoFocus: false,
+      selectableRangeClearCells: true,
+
+      // Tabulator's documented spreadsheet clipboard setup. In particular,
+      // do not inject row/column headers into copied rectangular cell ranges.
       clipboard: true,
       clipboardCopyStyled: false,
+      clipboardCopyConfig: {
+        rowHeaders: false,
+        columnHeaders: false,
+      },
       clipboardCopyRowRange: 'range',
       clipboardPasteParser: 'range',
       clipboardPasteAction: 'range',
@@ -82,7 +107,7 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
     tableRef.current = table;
 
     table.on('cellEdited', (cell) => {
-      if (pasteInProgress) return;
+      if (rangePasteInProgress) return;
       const row = cell.getRow().getData() as GridRow;
       if (cell.getField() === 'pinName') onEditPin(row.id, { pinName: String(cell.getValue() ?? '') });
       if (cell.getField() === 'net') onEditPin(row.id, { netName: String(cell.getValue() ?? '') });
@@ -93,15 +118,26 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
         const item = row.getData() as GridRow;
         return { pinId: item.id, pinName: String(item.pinName ?? ''), netName: String(item.net ?? '') };
       });
-      pasteInProgress = false;
+      rangePasteInProgress = false;
+      if (pasteResetTimer !== null) {
+        window.clearTimeout(pasteResetTimer);
+        pasteResetTimer = null;
+      }
       if (edits.length) onBulkEditPins(edits);
     });
 
-    table.on('clipboardPasteError', () => { pasteInProgress = false; });
+    table.on('clipboardPasteError', () => {
+      rangePasteInProgress = false;
+      if (pasteResetTimer !== null) {
+        window.clearTimeout(pasteResetTimer);
+        pasteResetTimer = null;
+      }
+    });
 
     return () => {
       tableRef.current = null;
       host.removeEventListener('paste', markPasteStart, true);
+      if (pasteResetTimer !== null) window.clearTimeout(pasteResetTimer);
       table.destroy();
     };
     // The table lifetime is tied to connector identity, not immutable project snapshots.
@@ -111,7 +147,12 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
 
   useEffect(() => {
     const table = tableRef.current;
-    if (!table) return;
+    const host = tableHost.current;
+    if (!table || !host) return;
+
+    // Never push an immutable project snapshot into Tabulator while its editor
+    // owns an input. Doing so can replace the value that the user is typing.
+    if (host.querySelector('.tabulator-editing')) return;
 
     const desired = rowsFor(connector, nets);
     const current = table.getData() as GridRow[];
