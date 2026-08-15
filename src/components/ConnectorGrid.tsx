@@ -60,9 +60,14 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       index: 'id',
       layout: 'fitColumns',
       height: Math.min(340, 42 + connector.pins.length * 34),
+      // Range selection and the default focus-triggered editor can fight over focus,
+      // especially inside a WebView. Make editing deterministic: one click opens
+      // the editor, while click-drag still establishes a range for copy/paste.
+      editTriggerEvent: 'click',
       selectableRange: 1,
       selectableRangeColumns: true,
       selectableRangeRows: true,
+      selectableRangeAutoFocus: false,
       clipboard: true,
       clipboardCopyStyled: false,
       clipboardCopyRowRange: 'range',
@@ -143,7 +148,7 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
   };
 
   return (
-    <section id={`connector-${connector.id}`} className={`connector-card ${selected ? 'selected' : ''}`} onMouseDown={onSelect}>
+    <section id={`connector-${connector.id}`} className={`connector-card ${selected ? 'selected' : ''}`} onClick={onSelect}>
       <div className="connector-header">
         <div>
           <strong>{connector.displayId}</strong>
