@@ -35,9 +35,12 @@ button:disabled { opacity: .38; }
 .connector-card { margin-bottom: 12px; border: 1px solid #2a3340; border-radius: 8px; overflow: hidden; background: #141a22; box-shadow: 0 5px 18px #0004; }
 .connector-card.selected { border-color: #7d63ff; box-shadow: 0 0 0 1px #7d63ff66, 0 8px 24px #0006; }
 .connector-header { min-height: 42px; padding: 8px 11px; display: flex; align-items: center; justify-content: space-between; background: #1a202a; border-bottom: 1px solid #303846; }
-.connector-header > div { display: flex; align-items: baseline; gap: 10px; }
-.connector-header strong { color: #9c8aff; }
+.connector-header > div { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.connector-header strong { color: #9c8aff; flex: 0 0 auto; }
 .connector-header span { font-size: 12px; }
+.connector-label-input { min-width: 80px; width: min(260px, 100%); color: #dce4ef; background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 4px 6px; outline: none; }
+.connector-label-input:hover { background: #202733; border-color: #303846; }
+.connector-label-input:focus { background: #10151c; border-color: #7d63ff; box-shadow: 0 0 0 1px #7d63ff44; }
 .muted { color: #728096; }
 .connector-table { min-height: 70px; }
 .empty-state { padding: 44px; text-align: center; color: #738197; border: 1px dashed #313b49; border-radius: 8px; }
