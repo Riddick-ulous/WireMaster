@@ -29,6 +29,12 @@ export function findHarnessForConnector(project: Project, connectorId: UUID): Su
   return project.subHarnesses.find((harness) => harness.connectors.some((c) => c.id === connectorId));
 }
 
+export function setConnectorLabel(project: Project, connectorId: UUID, label: string): void {
+  const connector = findConnector(project, connectorId);
+  if (!connector) throw new Error(`Unknown connector ${connectorId}`);
+  connector.label = label;
+}
+
 export function ensureNet(project: Project, name: string): Net | null {
   const normalized = name.trim();
   if (!normalized) return null;
