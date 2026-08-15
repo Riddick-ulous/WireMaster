@@ -43,9 +43,11 @@ Tauri
 - automated core tests
 
 ## Current hardening status
-- Core regression tests were green before the first build-fix pass.
-- Initial TypeScript build failures were localized to Tabulator event wiring, endpoint type narrowing, and node tsconfig emit settings.
-- Fixes are committed on `m0.1-bootstrap`; CI must be green before M0.1 is declared review-ready.
+- Locked `package-lock.json` and `src-tauri/Cargo.lock` are committed.
+- Web CI is green: `npm ci`, all core tests, and the production Vite/TypeScript build pass.
+- Tauri/Rust CI is now part of the permanent read-only workflow.
+- First Tauri check exposed the missing required app icon; a provisional `src-tauri/icons/icon.png` is now committed and the check is being rerun.
+- M0.1 is not declared review-ready until both web-core and tauri-core are green.
 
 ## Read before each stage
 1. `docs/requirements_mvp.md`
