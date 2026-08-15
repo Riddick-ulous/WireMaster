@@ -47,3 +47,17 @@ jobs:
       - run: npm ci
       - name: Build Tauri desktop app
         run: npm run tauri build -- --no-bundle
+
+  tauri-windows-build:
+    needs: web-core
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm.cmd ci
+      - name: Build Tauri desktop app on Windows
+        run: npm.cmd run tauri build -- --no-bundle
