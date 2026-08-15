@@ -1,11 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConnectorGrid } from './components/ConnectorGrid';
 import { ElectricalViewer } from './components/ElectricalViewer';
-import { addGenericConnector, assignPinNetByName, findPin } from './core/project';
+import { addGenericConnector, applyPinEdits, type PinEdit } from './core/project';
 import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
-import { TransactionHistory } from './core/transactions';
+import { TransactionHistory, type HistoryState } from './core/transactions';
 import type { Project, UUID } from './core/model';
 
 export default function App() {
@@ -16,32 +16,56 @@ export default function App() {
   const [selectedConnectorId, setSelectedConnectorId] = useState<UUID | null>(project.subHarnesses[0].connectors[0]?.id ?? null);
   const [highlightedNetId, setHighlightedNetId] = useState<UUID | null>(null);
 
+  const publishHistory = useCallback((state: HistoryState<Project>) => {
+    setHistoryState({ ...state, present: structuredClone(state.present) });
+  }, []);
+
   const commit = useCallback((mutator: (draft: Project) => void) => {
     const next = historyRef.current.commit((draft) => {
       mutator(draft);
       reconcileProject(draft);
     });
-    setHistoryState({ ...next, present: structuredClone(next.present) });
-  }, []);
+    publishHistory(next);
+  }, [publishHistory]);
+
+  const undo = useCallback(() => publishHistory(historyRef.current.undo()), [publishHistory]);
+  const redo = useCallback(() => publishHistory(historyRef.current.redo()), [publishHistory]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]') || target?.closest('.tabulator-editing')) return;
+
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [redo, undo]);
 
   const replaceProject = useCallback((next: Project) => {
     historyRef.current = new TransactionHistory<Project>(next, 30);
-    const snapshot = historyRef.current.snapshot();
-    setHistoryState({ ...snapshot, present: structuredClone(snapshot.present) });
+    publishHistory(historyRef.current.snapshot());
     setActiveHarnessId(next.subHarnesses[0].id);
     setSelectedConnectorId(next.subHarnesses[0].connectors[0]?.id ?? null);
     setHighlightedNetId(null);
-  }, []);
+  }, [publishHistory]);
 
   const harness = project.subHarnesses.find((item) => item.id === activeHarnessId) ?? project.subHarnesses[0];
 
   const editPin = useCallback((pinId: UUID, patch: { pinName?: string; netName?: string }) => {
-    commit((draft) => {
-      const pin = findPin(draft, pinId);
-      if (!pin) return;
-      if (patch.pinName !== undefined) pin.pinName = patch.pinName;
-      if (patch.netName !== undefined) assignPinNetByName(draft, pinId, patch.netName);
-    });
+    commit((draft) => applyPinEdits(draft, [{ pinId, ...patch }]));
+  }, [commit]);
+
+  const bulkEditPins = useCallback((edits: PinEdit[]) => {
+    commit((draft) => applyPinEdits(draft, edits));
   }, [commit]);
 
   const selectConnector = useCallback((id: UUID) => {
@@ -86,8 +110,8 @@ export default function App() {
         <button onClick={() => replaceProject(createDemoProject())}>Demo</button>
         <button onClick={openJson}>Open</button>
         <button onClick={saveJson}>Save JSON</button>
-        <button disabled={!historyState.undoDepth} onClick={() => setHistoryState(historyRef.current.undo())}>Undo {historyState.undoDepth || ''}</button>
-        <button disabled={!historyState.redoDepth} onClick={() => setHistoryState(historyRef.current.redo())}>Redo {historyState.redoDepth || ''}</button>
+        <button disabled={!historyState.undoDepth} onClick={undo}>Undo {historyState.undoDepth || ''}</button>
+        <button disabled={!historyState.redoDepth} onClick={redo}>Redo {historyState.redoDepth || ''}</button>
       </header>
 
       <main className="workspace">
@@ -98,7 +122,15 @@ export default function App() {
           </div>
           <div className="connector-list">
             {harness.connectors.map((connector) => (
-              <ConnectorGrid key={connector.id} connector={connector} nets={netOptions} selected={connector.id === selectedConnectorId} onSelect={() => setSelectedConnectorId(connector.id)} onEditPin={editPin} />
+              <ConnectorGrid
+                key={connector.id}
+                connector={connector}
+                nets={netOptions}
+                selected={connector.id === selectedConnectorId}
+                onSelect={() => setSelectedConnectorId(connector.id)}
+                onEditPin={editPin}
+                onBulkEditPins={bulkEditPins}
+              />
             ))}
             {!harness.connectors.length && <div className="empty-state">Add a connector to start the harness.</div>}
           </div>

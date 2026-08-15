@@ -9,13 +9,18 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react';
-import type { ConnectorInstance, Project, UUID } from '../core/model';
+import type { ConnectorInstance, PinEndpoint, Project, UUID, WireInstance } from '../core/model';
 
 interface ConnectorNodeData extends Record<string, unknown> {
   connector: ConnectorInstance;
 }
 
 type ConnectorNode = Node<ConnectorNodeData, 'connector'>;
+type ActivePinWire = WireInstance & { endpointA: PinEndpoint; endpointB: PinEndpoint };
+
+function isActivePinWire(wire: WireInstance): wire is ActivePinWire {
+  return wire.status === 'ACTIVE' && wire.endpointA.kind === 'pin' && wire.endpointB.kind === 'pin';
+}
 
 function ConnectorNodeView({ data }: NodeProps<ConnectorNode>) {
   return (
@@ -59,7 +64,7 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     selected: connector.id === selectedConnectorId,
   })), [harness, selectedConnectorId]);
 
-  const edges = useMemo<Edge[]>(() => harness.wires.filter((wire) => wire.status === 'ACTIVE' && wire.endpointA.kind === 'pin' && wire.endpointB.kind === 'pin').map((wire) => {
+  const edges = useMemo<Edge[]>(() => harness.wires.filter(isActivePinWire).map((wire) => {
     const wireClass = wireClasses.find((item) => item.id === wire.wireClassId);
     const primary = wire.overrides.primaryColor.mode === 'explicit' ? wire.overrides.primaryColor.value : wireClass?.primaryColor;
     const secondary = wire.overrides.secondaryColor.mode === 'explicit' ? wire.overrides.secondaryColor.value : wireClass?.secondaryColor;

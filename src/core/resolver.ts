@@ -54,23 +54,26 @@ export function reconcileProject(project: Project): void {
 
     const matched = new Set<string>();
     for (const wire of harness.wires) {
-      if (wire.endpointA.kind !== 'pin' || wire.endpointB.kind !== 'pin') continue;
-      const key = wireKey(wire.netId, wire.endpointA, wire.endpointB);
+      const endpointA = wire.endpointA;
+      const endpointB = wire.endpointB;
+      if (endpointA.kind !== 'pin' || endpointB.kind !== 'pin') continue;
+
+      const key = wireKey(wire.netId, endpointA, endpointB);
       if (desired.has(key)) {
         wire.status = 'ACTIVE';
         matched.add(key);
         continue;
       }
 
-      const aExists = existingPinIds.has(wire.endpointA.pinId);
-      const bExists = existingPinIds.has(wire.endpointB.pinId);
+      const aExists = existingPinIds.has(endpointA.pinId);
+      const bExists = existingPinIds.has(endpointB.pinId);
       if (!aExists || !bExists) {
         wire.status = 'DANGLING';
         continue;
       }
 
-      const a = pins.find((pin) => pin.pinId === wire.endpointA.pinId);
-      const b = pins.find((pin) => pin.pinId === wire.endpointB.pinId);
+      const a = pins.find((pin) => pin.pinId === endpointA.pinId);
+      const b = pins.find((pin) => pin.pinId === endpointB.pinId);
       if (!a || !b) wire.status = 'BROKEN';
       else if (a.netId === wire.netId || b.netId === wire.netId) wire.status = 'BROKEN';
       else wire.status = 'ORPHANED';

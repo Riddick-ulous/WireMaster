@@ -1,6 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { TabulatorFull as Tabulator } from 'tabulator-tables';
 import type { ConnectorInstance, Net, UUID } from '../core/model';
+import type { PinEdit } from '../core/project';
+
+interface GridRow {
+  id: UUID;
+  cavity: string;
+  pinName: string;
+  net: string;
+}
 
 interface Props {
   connector: ConnectorInstance;
@@ -8,21 +16,28 @@ interface Props {
   selected: boolean;
   onSelect: () => void;
   onEditPin: (pinId: UUID, patch: { pinName?: string; netName?: string }) => void;
+  onBulkEditPins: (edits: PinEdit[]) => void;
 }
 
-export function ConnectorGrid({ connector, nets, selected, onSelect, onEditPin }: Props) {
+export function ConnectorGrid({ connector, nets, selected, onSelect, onEditPin, onBulkEditPins }: Props) {
   const tableHost = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!tableHost.current) return;
-    const data = connector.pins.map((pin) => ({
+    const host = tableHost.current;
+    if (!host) return;
+
+    const data: GridRow[] = connector.pins.map((pin) => ({
       id: pin.id,
       cavity: pin.cavity,
       pinName: pin.pinName,
       net: nets.find((net) => net.id === pin.netId)?.name ?? '',
     }));
 
-    const table = new Tabulator(tableHost.current, {
+    let pasteInProgress = false;
+    const markPasteStart = () => { pasteInProgress = true; };
+    host.addEventListener('paste', markPasteStart, true);
+
+    const table = new Tabulator(host, {
       data,
       index: 'id',
       layout: 'fitColumns',
@@ -32,25 +47,39 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onEditPin }
       selectableRangeRows: true,
       clipboard: true,
       clipboardCopyStyled: false,
-      clipboardPasteAction: 'update',
+      clipboardCopyRowRange: 'range',
+      clipboardPasteParser: 'range',
+      clipboardPasteAction: 'range',
       columns: [
         { title: 'Cavity', field: 'cavity', width: 76, headerSort: false },
         { title: 'Pin name', field: 'pinName', editor: 'input', headerSort: false },
-        {
-          title: 'Net',
-          field: 'net',
-          editor: 'input',
-          headerSort: false,
-          cellEdited: (cell: any) => onEditPin(cell.getRow().getData().id, { netName: String(cell.getValue() ?? '') }),
-        },
+        { title: 'Net', field: 'net', editor: 'input', headerSort: false },
       ],
-      cellEdited: (cell: any) => {
-        if (cell.getField() === 'pinName') onEditPin(cell.getRow().getData().id, { pinName: String(cell.getValue() ?? '') });
-      },
     });
 
-    return () => table.destroy();
-  }, [connector, nets, onEditPin]);
+    table.on('cellEdited', (cell) => {
+      if (pasteInProgress) return;
+      const row = cell.getRow().getData() as GridRow;
+      if (cell.getField() === 'pinName') onEditPin(row.id, { pinName: String(cell.getValue() ?? '') });
+      if (cell.getField() === 'net') onEditPin(row.id, { netName: String(cell.getValue() ?? '') });
+    });
+
+    table.on('clipboardPasted', (_clipboard, _rowData, rows) => {
+      const edits: PinEdit[] = rows.map((row) => {
+        const item = row.getData() as GridRow;
+        return { pinId: item.id, pinName: String(item.pinName ?? ''), netName: String(item.net ?? '') };
+      });
+      pasteInProgress = false;
+      if (edits.length) onBulkEditPins(edits);
+    });
+
+    table.on('clipboardPasteError', () => { pasteInProgress = false; });
+
+    return () => {
+      host.removeEventListener('paste', markPasteStart, true);
+      table.destroy();
+    };
+  }, [connector, nets, onBulkEditPins, onEditPin]);
 
   return (
     <section id={`connector-${connector.id}`} className={`connector-card ${selected ? 'selected' : ''}`} onMouseDown={onSelect}>

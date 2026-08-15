@@ -1,6 +1,12 @@
 import type { ConnectorInstance, Net, PinInstance, Project, SubHarness, UUID } from './model';
 import { newId } from './model';
 
+export interface PinEdit {
+  pinId: UUID;
+  pinName?: string;
+  netName?: string;
+}
+
 export function findConnector(project: Project, connectorId: UUID): ConnectorInstance | undefined {
   for (const harness of project.subHarnesses) {
     const connector = harness.connectors.find((item) => item.id === connectorId);
@@ -43,6 +49,22 @@ export function assignPinNetByName(project: Project, pinId: UUID, netName: strin
   if (!pin) throw new Error(`Unknown pin ${pinId}`);
   const net = ensureNet(project, netName);
   pin.netId = net?.id ?? null;
+}
+
+export function applyPinEdits(project: Project, edits: PinEdit[]): void {
+  const targets = edits.map((edit) => {
+    const pin = findPin(project, edit.pinId);
+    if (!pin) throw new Error(`Unknown pin ${edit.pinId}`);
+    return { edit, pin };
+  });
+
+  for (const { edit, pin } of targets) {
+    if (edit.pinName !== undefined) pin.pinName = edit.pinName;
+    if (edit.netName !== undefined) {
+      const net = ensureNet(project, edit.netName);
+      pin.netId = net?.id ?? null;
+    }
+  }
 }
 
 export function addGenericConnector(project: Project, harnessId: UUID, pinCount = 4): ConnectorInstance {
