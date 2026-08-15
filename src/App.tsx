@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConnectorGrid } from './components/ConnectorGrid';
 import { ElectricalViewer } from './components/ElectricalViewer';
-import { addGenericConnector, applyPinEdits, type PinEdit } from './core/project';
+import { addGenericConnector, applyPinEdits, setConnectorLabel, type PinEdit } from './core/project';
 import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
@@ -68,6 +68,10 @@ export default function App() {
     commit((draft) => applyPinEdits(draft, edits));
   }, [commit]);
 
+  const renameConnector = useCallback((connectorId: UUID, label: string) => {
+    commit((draft) => setConnectorLabel(draft, connectorId, label));
+  }, [commit]);
+
   const selectConnector = useCallback((id: UUID) => {
     setSelectedConnectorId(id);
     requestAnimationFrame(() => document.getElementById(`connector-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -128,6 +132,7 @@ export default function App() {
                 nets={netOptions}
                 selected={connector.id === selectedConnectorId}
                 onSelect={() => setSelectedConnectorId(connector.id)}
+                onRename={(label) => renameConnector(connector.id, label)}
                 onEditPin={editPin}
                 onBulkEditPins={bulkEditPins}
               />
