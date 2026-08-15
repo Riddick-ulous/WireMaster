@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   Background,
   Controls,
@@ -8,8 +8,6 @@ import {
   type Edge,
   type Node,
   type NodeProps,
-  type OnNodesChange,
-  applyNodeChanges,
 } from '@xyflow/react';
 import type { ConnectorInstance, Project, UUID } from '../core/model';
 
@@ -66,7 +64,6 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     const primary = wire.overrides.primaryColor.mode === 'explicit' ? wire.overrides.primaryColor.value : wireClass?.primaryColor;
     const secondary = wire.overrides.secondaryColor.mode === 'explicit' ? wire.overrides.secondaryColor.value : wireClass?.secondaryColor;
     const gauge = wire.overrides.gaugeMm2.mode === 'explicit' ? wire.overrides.gaugeMm2.value : wireClass?.gaugeMm2;
-    const net = project.nets.find((item) => item.id === wire.netId);
     const highlighted = highlightedNetId === wire.netId;
     const color = colorMap[primary ?? ''] ?? '#9aa3b2';
     const colorText = [primary, secondary].filter(Boolean).join('/') || '—';
@@ -80,24 +77,16 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       animated: highlighted,
       style: { stroke: color, strokeWidth: highlighted ? 5 : 2.5, opacity: highlightedNetId && !highlighted ? 0.18 : 1 },
       labelStyle: { fill: highlighted ? '#fff' : '#c8cfdb', fontSize: 11, fontWeight: 600 },
-      data: { netId: net?.id },
+      data: { netId: wire.netId },
     };
-  }), [harness.wires, highlightedNetId, project.nets, wireClasses]);
-
-  const onNodesChange = useCallback<OnNodesChange<ConnectorNode>>((changes) => {
-    const next = applyNodeChanges(changes, nodes);
-    for (const change of changes) {
-      if (change.type === 'position' && change.position && !change.dragging) onLayoutChange(change.id, change.position.x, change.position.y);
-    }
-    void next;
-  }, [nodes, onLayoutChange]);
+  }), [harness.wires, highlightedNetId, wireClasses]);
 
   return (
     <ReactFlow<ConnectorNode>
       nodes={nodes}
       edges={edges}
       nodeTypes={{ connector: ConnectorNodeView }}
-      onNodesChange={onNodesChange}
+      onNodeDragStop={(_, node) => onLayoutChange(node.id, node.position.x, node.position.y)}
       onNodeClick={(_, node) => onSelectConnector(node.id)}
       onEdgeClick={(_, edge) => onHighlightNet((edge.data?.netId as UUID | undefined) ?? null)}
       fitView

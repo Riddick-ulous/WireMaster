@@ -15,7 +15,7 @@ function wireKey(netId: UUID, a: PinEndpoint, b: PinEndpoint): string {
   return [endpointKey(a), endpointKey(b)].sort().join('|') + `|${netId}`;
 }
 
-function collectPins(project: Project): PinRef[] {
+function collectConnectedPins(project: Project): PinRef[] {
   const result: PinRef[] = [];
   for (const harness of project.subHarnesses) {
     for (const connector of harness.connectors) {
@@ -27,9 +27,13 @@ function collectPins(project: Project): PinRef[] {
   return result;
 }
 
+function collectExistingPinIds(project: Project): Set<UUID> {
+  return new Set(project.subHarnesses.flatMap((harness) => harness.connectors.flatMap((connector) => connector.pins.map((pin) => pin.id))));
+}
+
 export function reconcileProject(project: Project): void {
-  const pins = collectPins(project);
-  const pinIds = new Set(pins.map((pin) => pin.pinId));
+  const pins = collectConnectedPins(project);
+  const existingPinIds = collectExistingPinIds(project);
 
   for (const net of project.nets) {
     const netPins = pins.filter((pin) => pin.netId === net.id);
@@ -58,14 +62,18 @@ export function reconcileProject(project: Project): void {
         continue;
       }
 
-      const aExists = pinIds.has(wire.endpointA.pinId);
-      const bExists = pinIds.has(wire.endpointB.pinId);
-      if (!aExists || !bExists) wire.status = 'DANGLING';
-      else {
-        const a = pins.find((pin) => pin.pinId === wire.endpointA.pinId);
-        const b = pins.find((pin) => pin.pinId === wire.endpointB.pinId);
-        wire.status = a?.netId === wire.netId || b?.netId === wire.netId ? 'BROKEN' : 'ORPHANED';
+      const aExists = existingPinIds.has(wire.endpointA.pinId);
+      const bExists = existingPinIds.has(wire.endpointB.pinId);
+      if (!aExists || !bExists) {
+        wire.status = 'DANGLING';
+        continue;
       }
+
+      const a = pins.find((pin) => pin.pinId === wire.endpointA.pinId);
+      const b = pins.find((pin) => pin.pinId === wire.endpointB.pinId);
+      if (!a || !b) wire.status = 'BROKEN';
+      else if (a.netId === wire.netId || b.netId === wire.netId) wire.status = 'BROKEN';
+      else wire.status = 'ORPHANED';
     }
 
     for (const [key, item] of desired) {
