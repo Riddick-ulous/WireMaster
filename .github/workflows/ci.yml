@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'm0.*']
+    branches: [main]
   pull_request:
 
 permissions:
@@ -21,10 +21,15 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  tauri-core:
+  tauri-build:
+    needs: web-core
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri Linux dependencies
         run: |
@@ -39,5 +44,6 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
-      - name: Check Tauri Rust core
-        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - run: npm ci
+      - name: Build Tauri desktop app
+        run: npm run tauri build -- --no-bundle
