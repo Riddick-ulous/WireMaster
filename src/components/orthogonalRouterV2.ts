@@ -16,6 +16,7 @@ import {
   type RouteRequest,
   type RouteTerminal,
 } from './routingGeometry';
+import { expandSpliceFanInRouting, finalizeSpliceFanInRoutes } from './spliceFanIn';
 
 interface BatchMetric { unrouted: number; crossings: number; churn: number; bends: number; length: number }
 interface PlannedSet { routes: Map<string, OrthogonalRouteResult>; metric: BatchMetric }
@@ -95,10 +96,6 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
   }
 
   const all = uniqueNumbers(values);
-  // These coordinates are not merely aesthetic lane suggestions: they are the
-  // first locations guaranteed to satisfy the 28 px bend-spacing contract when
-  // a route needs a dogleg away from either terminal. Keep them in the search
-  // budget even when many obstacle boundaries cluster near the midpoint.
   const mandatory = uniqueNumbers([
     sourceCoord - MIN_BEND_SPACING,
     sourceCoord + MIN_BEND_SPACING,
@@ -251,20 +248,25 @@ function beamPlan(requests: RouteRequest[], obstacles: RouteObstacle[]): Planned
 
 export function planOrthogonalRoutesV2(requests: RouteRequest[], obstacles: RouteObstacle[] = []): Map<string, OrthogonalRouteResult> {
   if (!requests.length) return new Map();
+  const expanded = expandSpliceFanInRouting(requests, obstacles);
+  const workingRequests = expanded.requests;
+  const workingObstacles = expanded.obstacles;
+
   let best: PlannedSet | null = null;
-  const variants = orders(requests);
-  const orderLimit = requests.length > 80 ? 2 : variants.length;
+  const variants = orders(workingRequests);
+  const orderLimit = workingRequests.length > 80 ? 2 : variants.length;
   for (const order of variants.slice(0, orderLimit)) {
-    const planned = greedyPlan(order, obstacles);
+    const planned = greedyPlan(order, workingObstacles);
     if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
   }
-  if (requests.length <= SMALL_BEAM_LIMIT) {
+  if (workingRequests.length <= SMALL_BEAM_LIMIT) {
     for (const order of variants.slice(0, 2)) {
-      const planned = beamPlan(order, obstacles);
+      const planned = beamPlan(order, workingObstacles);
       if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
     }
   }
-  return best?.routes ?? new Map();
+  const routed = best?.routes ?? new Map<string, OrthogonalRouteResult>();
+  return finalizeSpliceFanInRoutes(routed, requests, expanded.geometries);
 }
 
 export function routedPoints(result: OrthogonalRouteResult | undefined): RoutePoint[] { return result?.status === 'ROUTED' ? result.points : [] }
