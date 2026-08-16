@@ -171,6 +171,35 @@ export function setSplicePinMembers(project: Project, harnessId: UUID, spliceId:
     unique.set(endpointKey(endpoint), endpoint);
   }
 
+  const targetSpliceEndpoint: WireEndpoint = { kind: 'splice', spliceId: splice.id };
+  for (const endpoint of unique.values()) {
+    const key = endpointKey(endpoint);
+    if (splice.memberEndpoints.some((member) => endpointKey(member) === key)) continue;
+
+    const previousOwners = harness.splices.filter((other) => other.id !== splice.id
+      && other.netId === splice.netId
+      && other.status !== 'ORPHANED'
+      && other.memberEndpoints.some((member) => endpointKey(member) === key));
+    if (previousOwners.length > 1) {
+      throw new Error('This connector pin is assigned to multiple splices and needs review before it can be moved.');
+    }
+    if (previousOwners.length !== 1) continue;
+
+    const previousSpliceEndpoint: WireEndpoint = { kind: 'splice', spliceId: previousOwners[0].id };
+    const candidates = harness.wires.filter((wire) => wire.netId === splice.netId
+      && ((endpointsMatch(wire.endpointA, previousSpliceEndpoint) && endpointsMatch(wire.endpointB, endpoint))
+        || (endpointsMatch(wire.endpointB, previousSpliceEndpoint) && endpointsMatch(wire.endpointA, endpoint))));
+    if (candidates.length === 1) {
+      const wire = candidates[0];
+      wire.lastEndpointSnapshot = `${endpointKey(wire.endpointA)}|${endpointKey(wire.endpointB)}|${wire.netId}`;
+      if (endpointsMatch(wire.endpointA, previousSpliceEndpoint)) wire.endpointA = targetSpliceEndpoint;
+      else wire.endpointB = targetSpliceEndpoint;
+      wire.status = 'ACTIVE';
+    } else if (candidates.length > 1) {
+      for (const wire of candidates) wire.status = 'NEEDS_REVIEW';
+    }
+  }
+
   const selectedKeys = new Set(unique.keys());
   for (const other of harness.splices) {
     if (other.id === splice.id || other.netId !== splice.netId || other.status === 'ORPHANED') continue;
