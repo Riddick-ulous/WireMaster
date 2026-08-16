@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { connectorNearSplicePosition } from '../connectorNearSpliceLayout';
 import { planOrthogonalRoutesV2 } from '../orthogonalRouterV2';
 import { spliceLabelObstacle } from '../routingLabels';
+import { expandSpliceFanInRouting } from '../spliceFanIn';
 import { MIN_BEND_SPACING, routeCrossesObstacle, type CardinalSide, type RouteObstacle, type RouteRequest, type RouteTerminal } from '../routingGeometry';
 import type { ConnectorInstance, PinInstance, SpliceInstance } from '../../core/model';
 
@@ -59,7 +60,16 @@ describe('staggered adjacent connector-near splices', () => {
       { id: 'W10', source: terminal('C4', 'C4-p4', 'top', 580, 700), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
     ];
 
+    const expanded = expandSpliceFanInRouting(requests, obstacles);
+    console.info('[staggered-junction-assignment]', expanded.requests.map((request) => ({
+      id: request.id,
+      source: request.source.options.map((option) => ({ key: option.key, side: option.side, point: option.point })),
+      target: request.target.options.map((option) => ({ key: option.key, side: option.side, point: option.point })),
+    })));
+    console.info('[staggered-junction-obstacles]', expanded.obstacles);
+
     const results = planOrthogonalRoutesV2(requests, obstacles);
+    console.info('[staggered-junction-results]', requests.map((request) => ({ id: request.id, result: results.get(request.id) })));
     for (const request of requests) {
       const result = results.get(request.id);
       expect(result?.status, `${request.id} should route with staggered connector-near junctions`).toBe('ROUTED');
