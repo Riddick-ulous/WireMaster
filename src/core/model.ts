@@ -6,6 +6,7 @@ export type PropertyValue<T> =
 
 export type ConnectivityStatus = 'UNRESOLVED' | 'RESOLVED' | 'CONFIRMED';
 export type WireStatus = 'ACTIVE' | 'BROKEN' | 'DANGLING' | 'ORPHANED' | 'NEEDS_REVIEW';
+export type ViewerRotation = 0 | 90 | 180 | 270;
 
 export interface NetClass {
   id: UUID;
@@ -97,6 +98,7 @@ export interface Point {
 
 export interface ViewerLayout {
   connectorPositions: Record<UUID, Point>;
+  connectorRotations: Record<UUID, ViewerRotation>;
   splicePositions: Record<UUID, Point>;
 }
 
