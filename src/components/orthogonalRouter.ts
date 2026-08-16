@@ -33,6 +33,7 @@ export const ROUTE_OBSTACLE_CLEARANCE = 14;
 const LANE_SPACING = 22;
 const OUTSIDE_MARGIN = 42;
 const OUTSIDE_STEPS = 12;
+const UNNATURAL_AXIS_PENALTY = 20_000;
 
 function outward(point: RoutePoint, side: CardinalSide, distance: number): RoutePoint {
   if (side === 'left') return { x: point.x - distance, y: point.y };
@@ -177,7 +178,6 @@ function sharedEndpointSegments(request: RouteRequest, index: number, count: num
 
 function validGeometry(request: RouteRequest, points: RoutePoint[], routeSegments: Segment[], reserved: ReservedRoute[], obstacles: RouteObstacle[]): boolean {
   if (hasUTurn(points)) return false;
-
   for (let i = 0; i < routeSegments.length; i += 1) {
     const segment = routeSegments[i];
     for (const obstacle of obstacles) {
@@ -185,7 +185,6 @@ function validGeometry(request: RouteRequest, points: RoutePoint[], routeSegment
       if (endpointStub(request, i, routeSegments.length, obstacle.nodeId)) continue;
       return false;
     }
-
     for (const existing of reserved) {
       for (let j = 0; j < existing.segments.length; j += 1) {
         const other = existing.segments[j];
@@ -207,19 +206,24 @@ function lengthOf(segment: Segment): number {
 
 function crossings(routeSegments: Segment[], reserved: ReservedRoute[]): number {
   let total = 0;
-  for (const segment of routeSegments) {
-    for (const existing of reserved) {
-      for (const other of existing.segments) {
-        const point = perpendicularIntersection(segment, other);
-        if (point && !(atEndpoint(point, segment) && atEndpoint(point, other))) total += 1;
-      }
-    }
+  for (const segment of routeSegments) for (const existing of reserved) for (const other of existing.segments) {
+    const point = perpendicularIntersection(segment, other);
+    if (point && !(atEndpoint(point, segment) && atEndpoint(point, other))) total += 1;
   }
   return total;
 }
 
-function score(routeSegments: Segment[], reserved: ReservedRoute[]): number {
+function naturalAxisPenalty(source: CardinalSide, target: CardinalSide, axis: 'x' | 'y'): number {
+  const sourceHorizontal = source === 'left' || source === 'right';
+  const targetHorizontal = target === 'left' || target === 'right';
+  if (sourceHorizontal && targetHorizontal) return axis === 'y' ? 0 : UNNATURAL_AXIS_PENALTY;
+  if (!sourceHorizontal && !targetHorizontal) return axis === 'x' ? 0 : UNNATURAL_AXIS_PENALTY;
+  return 0;
+}
+
+function score(routeSegments: Segment[], reserved: ReservedRoute[], source: CardinalSide, target: CardinalSide, axis: 'x' | 'y'): number {
   return crossings(routeSegments, reserved) * 250_000
+    + naturalAxisPenalty(source, target, axis)
     + routeSegments.reduce((sum, segment) => sum + lengthOf(segment), 0)
     + Math.max(0, routeSegments.length - 1) * 24;
 }
@@ -242,7 +246,6 @@ function laneCandidates(axis: 'x' | 'y', sourceOut: RoutePoint, targetOut: Route
   const minCoord = Math.min(sourceCoord, targetCoord, obstacleMin);
   const maxCoord = Math.max(sourceCoord, targetCoord, obstacleMax);
   const values = [midpoint];
-
   for (let step = -6; step <= 6; step += 1) values.push(midpoint + step * LANE_SPACING);
   for (let step = 1; step <= 5; step += 1) {
     values.push(sourceCoord - step * LANE_SPACING, sourceCoord + step * LANE_SPACING);
@@ -253,15 +256,11 @@ function laneCandidates(axis: 'x' | 'y', sourceOut: RoutePoint, targetOut: Route
     const high = axis === 'x' ? obstacle.x + obstacle.width : obstacle.y + obstacle.height;
     values.push(low - ROUTE_OBSTACLE_CLEARANCE - LANE_SPACING, high + ROUTE_OBSTACLE_CLEARANCE + LANE_SPACING);
   }
-  for (let step = 0; step < OUTSIDE_STEPS; step += 1) {
-    values.push(minCoord - OUTSIDE_MARGIN - step * LANE_SPACING, maxCoord + OUTSIDE_MARGIN + step * LANE_SPACING);
-  }
-  for (const existing of reserved) {
-    for (const segment of existing.segments) {
-      if ((axis === 'x' && segment.orientation === 'v') || (axis === 'y' && segment.orientation === 'h')) {
-        const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
-        values.push(coordinate - LANE_SPACING, coordinate + LANE_SPACING);
-      }
+  for (let step = 0; step < OUTSIDE_STEPS; step += 1) values.push(minCoord - OUTSIDE_MARGIN - step * LANE_SPACING, maxCoord + OUTSIDE_MARGIN + step * LANE_SPACING);
+  for (const existing of reserved) for (const segment of existing.segments) {
+    if ((axis === 'x' && segment.orientation === 'v') || (axis === 'y' && segment.orientation === 'h')) {
+      const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
+      values.push(coordinate - LANE_SPACING, coordinate + LANE_SPACING);
     }
   }
   return uniqueNumbers(values).sort((a, b) => Math.abs(a - midpoint) - Math.abs(b - midpoint) || a - b);
@@ -269,31 +268,23 @@ function laneCandidates(axis: 'x' | 'y', sourceOut: RoutePoint, targetOut: Route
 
 function bestCandidate(request: RouteRequest, reserved: ReservedRoute[], obstacles: RouteObstacle[]): PlannedCandidate | null {
   let best: PlannedCandidate | null = null;
-  for (const source of request.source.options) {
-    for (const target of request.target.options) {
-      const sourceOut = outward(source.point, source.side, request.sourceBreakout);
-      const targetOut = outward(target.point, target.side, request.targetBreakout);
-      for (const axis of ['x', 'y'] as const) {
-        for (const lane of laneCandidates(axis, sourceOut, targetOut, obstacles, reserved)) {
-          const points = materialize(source, target, axis, lane, request.sourceBreakout, request.targetBreakout);
-          const routeSegments = segments(points);
-          if (!validGeometry(request, points, routeSegments, reserved, obstacles)) continue;
-          const candidateScore = score(routeSegments, reserved);
-          const plan: OrthogonalRoutePlan = {
-            sourceHandleId: source.key,
-            targetHandleId: target.key,
-            sourceSide: source.side,
-            targetSide: target.side,
-            axis,
-            lane,
-            sourceBreakout: request.sourceBreakout,
-            targetBreakout: request.targetBreakout,
-          };
-          const candidate = { plan, points, segments: routeSegments, score: candidateScore };
-          if (!best || candidateScore < best.score - EPS
-            || (Math.abs(candidateScore - best.score) < EPS && `${axis}:${lane}:${source.key}:${target.key}` < `${best.plan.axis}:${best.plan.lane}:${best.plan.sourceHandleId}:${best.plan.targetHandleId}`)) best = candidate;
-        }
-      }
+  for (const source of request.source.options) for (const target of request.target.options) {
+    const sourceOut = outward(source.point, source.side, request.sourceBreakout);
+    const targetOut = outward(target.point, target.side, request.targetBreakout);
+    for (const axis of ['x', 'y'] as const) for (const lane of laneCandidates(axis, sourceOut, targetOut, obstacles, reserved)) {
+      const points = materialize(source, target, axis, lane, request.sourceBreakout, request.targetBreakout);
+      const routeSegments = segments(points);
+      if (!validGeometry(request, points, routeSegments, reserved, obstacles)) continue;
+      const candidateScore = score(routeSegments, reserved, source.side, target.side, axis);
+      const plan: OrthogonalRoutePlan = {
+        sourceHandleId: source.key, targetHandleId: target.key,
+        sourceSide: source.side, targetSide: target.side,
+        axis, lane,
+        sourceBreakout: request.sourceBreakout, targetBreakout: request.targetBreakout,
+      };
+      const candidate = { plan, points, segments: routeSegments, score: candidateScore };
+      if (!best || candidateScore < best.score - EPS
+        || (Math.abs(candidateScore - best.score) < EPS && `${axis}:${lane}:${source.key}:${target.key}` < `${best.plan.axis}:${best.plan.lane}:${best.plan.sourceHandleId}:${best.plan.targetHandleId}`)) best = candidate;
     }
   }
   return best;
@@ -308,8 +299,7 @@ function center(terminal: RouteTerminal): RoutePoint {
 }
 
 function span(request: RouteRequest): number {
-  const a = center(request.source);
-  const b = center(request.target);
+  const a = center(request.source); const b = center(request.target);
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
@@ -331,8 +321,7 @@ function planInOrder(requests: RouteRequest[], obstacles: RouteObstacle[]): Plan
 function orders(requests: RouteRequest[]): RouteRequest[][] {
   const byId = (a: RouteRequest, b: RouteRequest) => a.id.localeCompare(b.id, undefined, { numeric: true });
   const coordinate = (request: RouteRequest) => {
-    const a = center(request.source);
-    const b = center(request.target);
+    const a = center(request.source); const b = center(request.target);
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
   return [
