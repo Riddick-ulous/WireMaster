@@ -25,6 +25,9 @@ export const SPLICE_FANIN_PADDING = 14;
 const CONNECTOR_NEAR_THRESHOLD = 140;
 const ADJACENT_SPLICE_TRANSVERSE_LIMIT = PIN_PITCH_PX * 1.5;
 const ADJACENT_SPLICE_RADIAL_LIMIT = CONNECTOR_SPLICE_STAGGER_PX + PIN_PITCH_PX;
+const DIRECT_PORT_LOOKAHEAD = 2 * MIN_BEND_SPACING;
+const DIRECT_PORT_HALF_WIDTH = 1.5 * MIN_BEND_SPACING;
+const DIRECT_PORT_CONGESTION_COST = 500;
 const FAN_KEY = '|fanin:';
 const BLOCKED_PORT_COST = 1_000_000;
 const OPPOSITE_SIDE_COST = 1_200;
@@ -262,14 +265,42 @@ function portStubBlocked(nodeId: string, port: RouteTerminalOption, obstacles: R
   return obstacles.some((obstacle) => obstacle.nodeId !== nodeId && segmentCrossesObstacle(segment, obstacle));
 }
 
+function directPortCongested(nodeId: string, port: RouteTerminalOption, obstacles: RouteObstacle[]): boolean {
+  return obstacles.some((obstacle) => {
+    if ((obstacle.kind !== 'node' && obstacle.kind !== undefined) || obstacle.nodeId === nodeId) return false;
+    if (obstacle.width >= 40 || obstacle.height >= 40) return false;
+    const other = obstacleCenter(obstacle);
+    const dx = other.x - port.point.x;
+    const dy = other.y - port.point.y;
+    let forward: number;
+    let transverse: number;
+    if (port.side === 'right') { forward = dx; transverse = Math.abs(dy); }
+    else if (port.side === 'left') { forward = -dx; transverse = Math.abs(dy); }
+    else if (port.side === 'bottom') { forward = dy; transverse = Math.abs(dx); }
+    else { forward = -dy; transverse = Math.abs(dx); }
+    return forward > 0 && forward <= DIRECT_PORT_LOOKAHEAD && transverse <= DIRECT_PORT_HALF_WIDTH;
+  });
+}
+
+function directionalCost(center: RoutePoint, other: RoutePoint, side: CardinalSide): number {
+  const preferred = preferredSide(center, other);
+  if (side === opposite(preferred)) return OPPOSITE_SIDE_COST;
+  if (side !== preferred) return ORTHOGONAL_SIDE_COST;
+  return 0;
+}
+
 function landingCost(geometry: SpliceFanInGeometry, branch: IncidentBranch, port: RouteTerminalOption, obstacles: RouteObstacle[], portIndex: number): number {
   const other = centerOfTerminal(branch.other);
-  const preferred = preferredSide(geometry.logicalCenter, other);
-  let direction = 0;
-  if (port.side === opposite(preferred)) direction = OPPOSITE_SIDE_COST;
-  else if (port.side !== preferred) direction = ORTHOGONAL_SIDE_COST;
+  const direction = directionalCost(geometry.logicalCenter, other, port.side);
   const blocked = portStubBlocked(geometry.nodeId, port, obstacles) ? BLOCKED_PORT_COST : 0;
   return blocked + direction + manhattan(other, port.point) + portIndex * 0.001;
+}
+
+function directLandingCost(nodeId: string, center: RoutePoint, branch: IncidentBranch, port: RouteTerminalOption, obstacles: RouteObstacle[], portIndex: number): number {
+  const other = centerOfTerminal(branch.other);
+  const blocked = portStubBlocked(nodeId, port, obstacles) ? BLOCKED_PORT_COST : 0;
+  const congested = directPortCongested(nodeId, port, obstacles) ? DIRECT_PORT_CONGESTION_COST : 0;
+  return blocked + congested + directionalCost(center, other, port.side) + manhattan(other, port.point) + portIndex * 0.001;
 }
 
 /** Rectangular Hungarian assignment, rows <= columns. Returns one unique column per row. */
@@ -346,6 +377,32 @@ function assignLandingPorts(
   return assignments;
 }
 
+function assignDirectConnectorPorts(
+  requests: RouteRequest[],
+  obstacles: RouteObstacle[],
+  degrees: Map<string, { count: number; terminal: RouteTerminal }>,
+  blockedSides: Map<string, CardinalSide>,
+  geometries: Map<string, SpliceFanInGeometry>,
+): Map<string, RouteTerminalOption> {
+  const assignments = new Map<string, RouteTerminalOption>();
+  for (const [nodeId, degree] of degrees) {
+    if (degree.count !== 2 || geometries.has(nodeId)) continue;
+    const blockedSide = blockedSides.get(nodeId);
+    if (!blockedSide) continue;
+    const ports = degree.terminal.options.filter((option) => option.side !== blockedSide);
+    const branches = incidentBranches(nodeId, requests)
+      .sort((left, right) => left.requestId.localeCompare(right.requestId, undefined, { numeric: true }) || left.end.localeCompare(right.end));
+    const center = centerOfTerminal(degree.terminal);
+    const costs = branches.map((branch) => ports.map((port, index) => directLandingCost(nodeId, center, branch, port, obstacles, index)));
+    const selected = minimumCostAssignment(costs);
+    branches.forEach((branch, index) => {
+      const port = ports[selected[index]];
+      if (port) assignments.set(`${branch.requestId}:${branch.end}`, port);
+    });
+  }
+  return assignments;
+}
+
 function routingObstaclesForJunctions(obstacles: RouteObstacle[], geometries: Map<string, SpliceFanInGeometry>): RouteObstacle[] {
   return obstacles.map((obstacle) => {
     if (!obstacle.nodeId || (obstacle.kind !== 'node' && obstacle.kind !== undefined)) return obstacle;
@@ -365,7 +422,8 @@ function withoutConnectorFacingSide(terminal: RouteTerminal, blockedSide: Cardin
 export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: RouteObstacle[]): ExpandedSpliceRouting {
   const geometries = new Map<string, SpliceFanInGeometry>();
   const connectorBlockedSides = new Map<string, CardinalSide>();
-  for (const [nodeId, degree] of endpointDegrees(requests)) {
+  const degrees = endpointDegrees(requests);
+  for (const [nodeId, degree] of degrees) {
     const blockedSide = blockedConnectorSide(nodeId, centerOfTerminal(degree.terminal), obstacles);
     if (blockedSide) connectorBlockedSides.set(nodeId, blockedSide);
     const geometry = buildSpliceFanInGeometry(nodeId, degree.terminal, degree.count, obstacles);
@@ -381,17 +439,24 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
   const junctionObstacles = [...geometries.values()].map((geometry) => geometry.envelope);
   const expandedObstacles = [...localObstacles, ...junctionObstacles];
   const assignments = assignLandingPorts(requests, expandedObstacles, geometries);
+  const directAssignments = assignDirectConnectorPorts(requests, expandedObstacles, degrees, connectorBlockedSides, geometries);
   const expandedRequests = requests.map((request) => {
     const sourceGeometry = geometries.get(request.source.nodeId);
     const targetGeometry = geometries.get(request.target.nodeId);
+    const directSource = directAssignments.get(`${request.id}:source`);
+    const directTarget = directAssignments.get(`${request.id}:target`);
     return {
       ...request,
       source: sourceGeometry
         ? { nodeId: request.source.nodeId, options: [assignments.get(`${request.id}:source`) ?? sourceGeometry.ports[0]] }
-        : withoutConnectorFacingSide(request.source, connectorBlockedSides.get(request.source.nodeId)),
+        : directSource
+          ? { nodeId: request.source.nodeId, options: [directSource] }
+          : withoutConnectorFacingSide(request.source, connectorBlockedSides.get(request.source.nodeId)),
       target: targetGeometry
         ? { nodeId: request.target.nodeId, options: [assignments.get(`${request.id}:target`) ?? targetGeometry.ports[0]] }
-        : withoutConnectorFacingSide(request.target, connectorBlockedSides.get(request.target.nodeId)),
+        : directTarget
+          ? { nodeId: request.target.nodeId, options: [directTarget] }
+          : withoutConnectorFacingSide(request.target, connectorBlockedSides.get(request.target.nodeId)),
     };
   });
   return { requests: expandedRequests, obstacles: expandedObstacles, geometries };
