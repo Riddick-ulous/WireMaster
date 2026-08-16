@@ -24,6 +24,7 @@ interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: Rese
 const LANE_STEP = 28;
 const OUTSIDE_MARGIN = 84;
 const MAX_AXIS_LANES = 12;
+const DUAL_LANE_LIMIT = 12;
 const SMALL_BEAM_LIMIT = 40;
 const BEAM_WIDTH = 8;
 const CANDIDATES_PER_BEAM_STATE = 6;
@@ -93,9 +94,24 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
     }
   }
 
-  return uniqueNumbers(values)
-    .sort((left, right) => Math.abs(left - midpoint) - Math.abs(right - midpoint) || left - right)
-    .slice(0, MAX_AXIS_LANES);
+  const all = uniqueNumbers(values);
+  // These coordinates are not merely aesthetic lane suggestions: they are the
+  // first locations guaranteed to satisfy the 28 px bend-spacing contract when
+  // a route needs a dogleg away from either terminal. Keep them in the search
+  // budget even when many obstacle boundaries cluster near the midpoint.
+  const mandatory = uniqueNumbers([
+    sourceCoord - MIN_BEND_SPACING,
+    sourceCoord + MIN_BEND_SPACING,
+    targetCoord - MIN_BEND_SPACING,
+    targetCoord + MIN_BEND_SPACING,
+    midpoint,
+    sourceCoord,
+    targetCoord,
+  ]);
+  const remainder = all
+    .filter((value) => !mandatory.some((priority) => Math.abs(priority - value) < 0.25))
+    .sort((left, right) => Math.abs(left - midpoint) - Math.abs(right - midpoint) || left - right);
+  return [...mandatory, ...remainder].slice(0, MAX_AXIS_LANES);
 }
 
 function routeKey(points: RoutePoint[]): string { return points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|') }
@@ -109,10 +125,6 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
   const selectedRoutes = new Set<string>();
   const usedHandlePairs = new Set<string>();
 
-  // First preserve the best route for as many distinct source/target port pairs
-  // as the beam budget permits. This is important for splice fan-out: otherwise
-  // several near-identical routes through one cheap port can crowd every other
-  // port out before later wires get a chance to use them.
   for (const candidate of sorted) {
     const pair = handlePairKey(candidate);
     if (usedHandlePairs.has(pair)) continue;
@@ -122,7 +134,6 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
     if (selected.length >= limit) return selected;
   }
 
-  // Fill any remaining budget with the globally best geometric alternatives.
   for (const candidate of sorted) {
     const key = routeKey(candidate.route.points);
     if (selectedRoutes.has(key)) continue;
@@ -166,8 +177,8 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
       const yLanes = axisLanes('y', sourceOut, targetOut, obstacles, reserved);
       for (const x of xLanes) consider(source, target, [source.point, sourceOut, { x, y: sourceOut.y }, { x, y: targetOut.y }, targetOut, target.point]);
       for (const y of yLanes) consider(source, target, [source.point, sourceOut, { x: sourceOut.x, y }, { x: targetOut.x, y }, targetOut, target.point]);
-      for (const x of xLanes.slice(0, 8)) {
-        for (const y of yLanes.slice(0, 8)) {
+      for (const x of xLanes.slice(0, DUAL_LANE_LIMIT)) {
+        for (const y of yLanes.slice(0, DUAL_LANE_LIMIT)) {
           consider(source, target, [source.point, sourceOut, { x, y: sourceOut.y }, { x, y }, { x: targetOut.x, y }, targetOut, target.point]);
           consider(source, target, [source.point, sourceOut, { x: sourceOut.x, y }, { x, y }, { x, y: targetOut.y }, targetOut, target.point]);
         }
