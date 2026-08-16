@@ -105,7 +105,7 @@ describe('staggered adjacent connector-near splices', () => {
     }
   });
 
-  it('uses clean natural departures for two external branches on adjacent 3W splices', () => {
+  it('uses a compact radial merge on the inner adjacent 3W splice', () => {
     const c3 = connector();
     const connectorPosition = { x: 300, y: 200 };
     const s1Placement = connectorNearSplicePosition(splice('S1', 'P3'), c3, connectorPosition, 0);
@@ -131,22 +131,31 @@ describe('staggered adjacent connector-near splices', () => {
     ];
 
     const expanded = expandSpliceFanInRouting(requests, obstacles);
-    expect(expanded.geometries.size).toBe(0);
+    expect(expanded.geometries.size).toBe(1);
+    const s1Geometry = expanded.geometries.get('S1');
+    expect(s1Geometry).toBeDefined();
+    expect(s1Geometry?.secondaryBlockedSide).toBeNull();
+    expect(s1Geometry?.availableSides).toEqual(['right']);
+    expect(s1Geometry?.envelope.width).toBe(MIN_BEND_SPACING);
+    expect(s1Geometry?.envelope.height).toBe(MIN_BEND_SPACING);
+    expect(s1Geometry?.ports).toHaveLength(2);
+    expect(expanded.geometries.has('S2')).toBe(false);
+
     const expandedTargets = new Map(expanded.requests.map((request) => [request.id, request.target.options]));
     expect(expandedTargets.get('W5')).toHaveLength(1);
     expect(expandedTargets.get('W6')).toHaveLength(1);
     expect(expandedTargets.get('W8')).toHaveLength(1);
     expect(expandedTargets.get('W9')).toHaveLength(1);
-    expect(expandedTargets.get('W5')?.[0]?.side).toBe('bottom');
-    expect(expandedTargets.get('W6')?.[0]?.side).toBe('top');
+    expect(expandedTargets.get('W5')?.[0]?.side).toBe('right');
+    expect(expandedTargets.get('W6')?.[0]?.side).toBe('right');
     expect(expandedTargets.get('W8')?.[0]?.side).toBe('right');
     expect(expandedTargets.get('W9')?.[0]?.side).toBe('top');
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
     for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
 
-    expectTargetSide(results, 'W5', 'bottom');
-    expectTargetSide(results, 'W6', 'top');
+    expectTargetSide(results, 'W5', 'right');
+    expectTargetSide(results, 'W6', 'right');
     expectTargetSide(results, 'W8', 'right');
     expectTargetSide(results, 'W9', 'top');
   });
