@@ -302,6 +302,7 @@ function portStubBlocked(nodeId: string, port: RouteTerminalOption, obstacles: R
 function directPortCongested(nodeId: string, port: RouteTerminalOption, obstacles: RouteObstacle[]): boolean {
   return obstacles.some((obstacle) => {
     if ((obstacle.kind !== 'node' && obstacle.kind !== undefined) || obstacle.nodeId === nodeId) return false;
+    if (obstacle.id.startsWith('fanin-')) return false;
     if (obstacle.width >= 40 || obstacle.height >= 40) return false;
     const other = obstacleCenter(obstacle);
     const dx = other.x - port.point.x;
