@@ -20,7 +20,11 @@ const WIRE_LABEL_CHAR_WIDTH = 4.7;
 const WIRE_LABEL_OFFSET = 9;
 const SPLICE_LABEL_FONT_HEIGHT = 9;
 const SPLICE_LABEL_CHAR_WIDTH = 5.0;
-const SPLICE_LABEL_GAP = 17;
+// Keep the annotation close to its splice. At 17 px an S2 connector-near
+// label plus padding reached back into the neighbouring S1 departure lane in
+// the 56 px staggered layout, even though the visible junctions themselves had
+// sufficient routing space.
+export const SPLICE_LABEL_GAP = 10;
 const SPLICE_LABEL_BASELINE_GAP = 1;
 
 export function estimateWireLabelWidth(text: string): number {
