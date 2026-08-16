@@ -275,10 +275,11 @@ function connectorBreakouts(wires: ActiveWire[], connectors: ConnectorInstance[]
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]));
   for (const wire of wires) {
     for (const item of [{ endpoint: wire.endpointA, end: 'source' as const }, { endpoint: wire.endpointB, end: 'target' as const }]) {
-      if (item.endpoint.kind !== 'pin') continue;
-      const connector = connectorById.get(item.endpoint.connectorId);
+      const endpoint = item.endpoint;
+      if (endpoint.kind !== 'pin') continue;
+      const connector = connectorById.get(endpoint.connectorId);
       if (!connector) continue;
-      const pinIndex = Math.max(0, connector.pins.findIndex((pin) => pin.id === item.endpoint.pinId));
+      const pinIndex = Math.max(0, connector.pins.findIndex((pin) => pin.id === endpoint.pinId));
       const entries = entriesByConnector.get(connector.id) ?? [];
       entries.push({ wire, end: item.end, pinIndex });
       entriesByConnector.set(connector.id, entries);
