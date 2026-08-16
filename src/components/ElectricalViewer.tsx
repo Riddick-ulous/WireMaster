@@ -137,13 +137,7 @@ function SpliceNodeView({ id, data }: NodeProps<SpliceNode>) {
       title={data.summary}
     >
       {(['left', 'right', 'top', 'bottom'] as const).map((side) => (
-        <Handle
-          key={side}
-          id={`s-${id}-${side}`}
-          type="source"
-          position={positionForSide(side)}
-          className="splice-handle"
-        />
+        <Handle key={side} id={`s-${id}-${side}`} type="source" position={positionForSide(side)} className="splice-handle" />
       ))}
       <span className="splice-tag">{data.preview ? 'NEW' : data.splice.displayId}{data.wireCount ? ` · ${data.wireCount}W` : ''}</span>
     </div>
@@ -192,27 +186,12 @@ function orthogonalPath(
   const targetOut = outwardPoint(targetX, targetY, targetPosition, targetBreakout);
 
   if (axis === 'x' && lane !== null) {
-    return compactPath([
-      { x: sourceX, y: sourceY },
-      sourceOut,
-      { x: lane, y: sourceOut.y },
-      { x: lane, y: targetOut.y },
-      targetOut,
-      { x: targetX, y: targetY },
-    ]);
+    return compactPath([{ x: sourceX, y: sourceY }, sourceOut, { x: lane, y: sourceOut.y }, { x: lane, y: targetOut.y }, targetOut, { x: targetX, y: targetY }]);
   }
   if (axis === 'y' && lane !== null) {
-    return compactPath([
-      { x: sourceX, y: sourceY },
-      sourceOut,
-      { x: sourceOut.x, y: lane },
-      { x: targetOut.x, y: lane },
-      targetOut,
-      { x: targetX, y: targetY },
-    ]);
+    return compactPath([{ x: sourceX, y: sourceY }, sourceOut, { x: sourceOut.x, y: lane }, { x: targetOut.x, y: lane }, targetOut, { x: targetX, y: targetY }]);
   }
 
-  // Fallback for temporary preview edges that are not part of the global planner.
   const sourceHorizontal = sourcePosition === Position.Left || sourcePosition === Position.Right;
   const targetHorizontal = targetPosition === Position.Left || targetPosition === Position.Right;
   if (sourceHorizontal && targetHorizontal) {
@@ -288,10 +267,6 @@ function endpointKeyLocal(endpoint: WireEndpoint): string {
 
 function nodeIdForEndpoint(endpoint: WireEndpoint): UUID {
   return endpoint.kind === 'pin' ? endpoint.connectorId : endpoint.spliceId;
-}
-
-function pinHandleId(endpoint: WireEndpoint): string | null {
-  return endpoint.kind === 'pin' ? `p-${endpoint.pinId}` : null;
 }
 
 function breakoutKey(wireId: UUID, end: EdgeEnd): string {
@@ -421,15 +396,15 @@ function nodeObstacle(node: FlowNode): RouteObstacle | null {
 }
 
 function nearestSpliceHandle(endpoint: WireEndpoint, other: WireEndpoint, nodes: FlowNode[]): string {
-  const fixed = pinHandleId(endpoint);
-  if (fixed) return fixed;
-  const node = nodes.find((item) => item.id === endpoint.spliceId);
+  if (endpoint.kind === 'pin') return `p-${endpoint.pinId}`;
+  const spliceNodeId = nodeIdForEndpoint(endpoint);
+  const node = nodes.find((item) => item.id === spliceNodeId);
   const otherNode = nodes.find((item) => item.id === nodeIdForEndpoint(other));
-  if (!node || !otherNode) return `s-${endpoint.spliceId}-right`;
+  if (!node || !otherNode) return `s-${spliceNodeId}-right`;
   const dx = otherNode.position.x - node.position.x;
   const dy = otherNode.position.y - node.position.y;
   const side: CardinalSide = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top');
-  return `s-${endpoint.spliceId}-${side}`;
+  return `s-${spliceNodeId}-${side}`;
 }
 
 interface Props {
