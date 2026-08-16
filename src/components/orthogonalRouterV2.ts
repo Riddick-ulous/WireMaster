@@ -20,7 +20,7 @@ import { expandSpliceFanInRouting, finalizeSpliceFanInRoutes } from './spliceFan
 
 interface BatchMetric { unrouted: number; crossings: number; churn: number; bends: number; length: number }
 interface PlannedSet { routes: Map<string, OrthogonalRouteResult>; metric: BatchMetric }
-interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: ReservedRoute[]; metric: BatchMetric }
+interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: ReservedRoute[]; metric: BatchMetric; futureBlocked: number }
 
 const LANE_STEP = 28;
 const OUTSIDE_MARGIN = 84;
@@ -30,6 +30,7 @@ const DUAL_LANE_LIMIT = 12;
 const SMALL_BEAM_LIMIT = 40;
 const BEAM_WIDTH = 16;
 const CANDIDATES_PER_BEAM_STATE = 8;
+const LOOKAHEAD_REQUEST_LIMIT = 12;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -151,8 +152,6 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
     usedTopologies.add(routeTopologyKey(candidate));
   };
 
-  // First retain one candidate for each terminal pair. This preserves splice
-  // side diversity when a junction has multiple landing ports.
   for (const candidate of sorted) {
     const pair = handlePairKey(candidate);
     if (usedHandlePairs.has(pair)) continue;
@@ -160,9 +159,6 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
     if (selected.length >= limit) return selected;
   }
 
-  // Then retain the best geometrically distinct orthogonal topology for each
-  // pair. A slightly longer H-V-H-V-H dogleg can be essential when the cheap
-  // H-V-H route blocks a later branch, so the beam must see both.
   for (const candidate of sorted) {
     const key = routeTopologyKey(candidate);
     if (usedTopologies.has(key)) continue;
@@ -260,27 +256,41 @@ function greedyPlan(requests: RouteRequest[], obstacles: RouteObstacle[]): Plann
   return { routes, metric };
 }
 
+function futureBlockedCount(requests: RouteRequest[], reserved: ReservedRoute[], obstacles: RouteObstacle[]): number {
+  let blocked = 0;
+  for (const request of requests.slice(0, LOOKAHEAD_REQUEST_LIMIT)) {
+    if (!request.source.options.length || !request.target.options.length || !topCandidates(request, reserved, obstacles, 1).length) blocked += 1;
+  }
+  return blocked;
+}
+
 function beamPlan(requests: RouteRequest[], obstacles: RouteObstacle[]): PlannedSet {
-  let states: BeamState[] = [{ routes: new Map(), reserved: [], metric: emptyMetric() }];
-  for (const request of requests) {
+  let states: BeamState[] = [{ routes: new Map(), reserved: [], metric: emptyMetric(), futureBlocked: 0 }];
+  for (let requestIndex = 0; requestIndex < requests.length; requestIndex += 1) {
+    const request = requests[requestIndex];
+    const remaining = requests.slice(requestIndex + 1);
     const next: BeamState[] = [];
     for (const state of states) {
       const candidates = topCandidates(request, state.reserved, obstacles, CANDIDATES_PER_BEAM_STATE);
       if (!candidates.length) {
         const routes = new Map(state.routes);
         routes.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' });
-        next.push({ routes, reserved: state.reserved, metric: { ...state.metric, unrouted: state.metric.unrouted + 1 } });
+        const reserved = state.reserved;
+        next.push({ routes, reserved, metric: { ...state.metric, unrouted: state.metric.unrouted + 1 }, futureBlocked: futureBlockedCount(remaining, reserved, obstacles) });
         continue;
       }
       for (const candidate of candidates) {
         const routes = new Map(state.routes);
         routes.set(request.id, candidate.route);
-        next.push({ routes, reserved: [...state.reserved, { request, route: candidate.route, segments: candidate.segments }], metric: addMetric(state.metric, candidate.metric) });
+        const reserved = [...state.reserved, { request, route: candidate.route, segments: candidate.segments }];
+        next.push({ routes, reserved, metric: addMetric(state.metric, candidate.metric), futureBlocked: futureBlockedCount(remaining, reserved, obstacles) });
       }
     }
-    states = next.sort((left, right) => compareBatch(left.metric, right.metric)).slice(0, BEAM_WIDTH);
+    states = next
+      .sort((left, right) => left.futureBlocked - right.futureBlocked || compareBatch(left.metric, right.metric))
+      .slice(0, BEAM_WIDTH);
   }
-  const best = states[0] ?? { routes: new Map<string, OrthogonalRouteResult>(), reserved: [], metric: emptyMetric() };
+  const best = states.sort((left, right) => compareBatch(left.metric, right.metric))[0] ?? { routes: new Map<string, OrthogonalRouteResult>(), reserved: [], metric: emptyMetric(), futureBlocked: 0 };
   return { routes: best.routes, metric: best.metric };
 }
 
