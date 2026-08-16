@@ -65,7 +65,7 @@ button:disabled { opacity: .38; }
 .viewer-pin:last-child { border-bottom: 0; }
 .cavity { color: #7f8da1; font-size: 9px; font-variant-numeric: tabular-nums; }
 .pin-handle { width: 7px !important; height: 7px !important; border: 1px solid #c8d0dc !important; background: #67778f !important; }
-.react-flow__edge-textbg { fill: #10151d; }
+.wire-end-label { font-size: 8px; font-weight: 600; paint-order: stroke; stroke: #0b0f14; stroke-width: 3px; stroke-linejoin: round; }
 .react-flow__controls { border: 1px solid #333d4a; box-shadow: none; }
 .react-flow__controls-button { background: #171d26; color: #cbd3de; border-bottom-color: #303845; }
 .react-flow__controls-button:hover { background: #232b37; }
