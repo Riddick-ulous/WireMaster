@@ -22,11 +22,11 @@ interface PlannedSet { routes: Map<string, OrthogonalRouteResult>; metric: Batch
 interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: ReservedRoute[]; metric: BatchMetric }
 
 const LANE_STEP = 28;
-const OUTSIDE_MARGIN = 56;
-const MAX_AXIS_LANES = 8;
+const OUTSIDE_MARGIN = 84;
+const MAX_AXIS_LANES = 12;
 const SMALL_BEAM_LIMIT = 40;
-const BEAM_WIDTH = 4;
-const CANDIDATES_PER_BEAM_STATE = 3;
+const BEAM_WIDTH = 6;
+const CANDIDATES_PER_BEAM_STATE = 4;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -50,10 +50,10 @@ function uniqueNumbers(values: number[]): number[] {
 }
 
 function relevantObstacles(source: RoutePoint, target: RoutePoint, obstacles: RouteObstacle[]): RouteObstacle[] {
-  const minX = Math.min(source.x, target.x) - 280;
-  const maxX = Math.max(source.x, target.x) + 280;
-  const minY = Math.min(source.y, target.y) - 280;
-  const maxY = Math.max(source.y, target.y) + 280;
+  const minX = Math.min(source.x, target.x) - 360;
+  const maxX = Math.max(source.x, target.x) + 360;
+  const minY = Math.min(source.y, target.y) - 360;
+  const maxY = Math.max(source.y, target.y) + 360;
   return obstacles.filter((obstacle) => {
     const rect = rectForObstacle(obstacle);
     return rect.right >= minX && rect.left <= maxX && rect.bottom >= minY && rect.top <= maxY;
@@ -65,7 +65,11 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
   const targetCoord = axis === 'x' ? target.x : target.y;
   const midpoint = (sourceCoord + targetCoord) / 2;
   const values = [midpoint, sourceCoord, targetCoord];
-  for (let step = 1; step <= 3; step += 1) values.push(midpoint - step * LANE_STEP, midpoint + step * LANE_STEP);
+  for (let step = 1; step <= 5; step += 1) {
+    values.push(midpoint - step * LANE_STEP, midpoint + step * LANE_STEP);
+    values.push(sourceCoord - step * LANE_STEP, sourceCoord + step * LANE_STEP);
+    values.push(targetCoord - step * LANE_STEP, targetCoord + step * LANE_STEP);
+  }
 
   let minimum = Math.min(sourceCoord, targetCoord);
   let maximum = Math.max(sourceCoord, targetCoord);
@@ -84,6 +88,7 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
       if ((axis === 'x' && segment.orientation === 'v') || (axis === 'y' && segment.orientation === 'h')) {
         const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
         values.push(coordinate - MIN_WIRE_SPACING, coordinate + MIN_WIRE_SPACING);
+        values.push(coordinate - 2 * MIN_WIRE_SPACING, coordinate + 2 * MIN_WIRE_SPACING);
       }
     }
   }
@@ -128,8 +133,8 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
       const yLanes = axisLanes('y', sourceOut, targetOut, obstacles, reserved);
       for (const x of xLanes) consider(source, target, [source.point, sourceOut, { x, y: sourceOut.y }, { x, y: targetOut.y }, targetOut, target.point]);
       for (const y of yLanes) consider(source, target, [source.point, sourceOut, { x: sourceOut.x, y }, { x: targetOut.x, y }, targetOut, target.point]);
-      for (const x of xLanes.slice(0, 6)) {
-        for (const y of yLanes.slice(0, 6)) {
+      for (const x of xLanes.slice(0, 8)) {
+        for (const y of yLanes.slice(0, 8)) {
           consider(source, target, [source.point, sourceOut, { x, y: sourceOut.y }, { x, y }, { x: targetOut.x, y }, targetOut, target.point]);
           consider(source, target, [source.point, sourceOut, { x: sourceOut.x, y }, { x, y }, { x, y: targetOut.y }, targetOut, target.point]);
         }
