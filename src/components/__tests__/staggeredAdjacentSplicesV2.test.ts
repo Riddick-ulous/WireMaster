@@ -105,7 +105,7 @@ describe('staggered adjacent connector-near splices', () => {
     }
   });
 
-  it('uses a compact radial merge on the inner adjacent 3W splice', () => {
+  it('fans both adjacent 3W splices radially outward and away from each other', () => {
     const c3 = connector();
     const connectorPosition = { x: 300, y: 200 };
     const s1Placement = connectorNearSplicePosition(splice('S1', 'P3'), c3, connectorPosition, 0);
@@ -131,15 +131,20 @@ describe('staggered adjacent connector-near splices', () => {
     ];
 
     const expanded = expandSpliceFanInRouting(requests, obstacles);
-    expect(expanded.geometries.size).toBe(1);
+    expect(expanded.geometries.size).toBe(2);
     const s1Geometry = expanded.geometries.get('S1');
+    const s2Geometry = expanded.geometries.get('S2');
     expect(s1Geometry).toBeDefined();
-    expect(s1Geometry?.secondaryBlockedSide).toBeNull();
-    expect(s1Geometry?.availableSides).toEqual(['right']);
-    expect(s1Geometry?.envelope.width).toBe(MIN_BEND_SPACING);
-    expect(s1Geometry?.envelope.height).toBe(MIN_BEND_SPACING);
-    expect(s1Geometry?.ports).toHaveLength(2);
-    expect(expanded.geometries.has('S2')).toBe(false);
+    expect(s2Geometry).toBeDefined();
+    for (const geometry of [s1Geometry, s2Geometry]) {
+      expect(geometry?.secondaryBlockedSide).toBeNull();
+      expect(geometry?.availableSides).toEqual(['right']);
+      expect(geometry?.envelope.width).toBe(MIN_BEND_SPACING);
+      expect(geometry?.envelope.height).toBe(MIN_BEND_SPACING);
+      expect(geometry?.ports).toHaveLength(2);
+    }
+    expect((s1Geometry?.envelope.y ?? 0) + (s1Geometry?.envelope.height ?? 0) / 2).toBeLessThan(s1Center.y);
+    expect((s2Geometry?.envelope.y ?? 0) + (s2Geometry?.envelope.height ?? 0) / 2).toBeGreaterThan(s2Center.y);
 
     const expandedTargets = new Map(expanded.requests.map((request) => [request.id, request.target.options]));
     expect(expandedTargets.get('W5')).toHaveLength(1);
@@ -149,7 +154,20 @@ describe('staggered adjacent connector-near splices', () => {
     expect(expandedTargets.get('W5')?.[0]?.side).toBe('right');
     expect(expandedTargets.get('W6')?.[0]?.side).toBe('right');
     expect(expandedTargets.get('W8')?.[0]?.side).toBe('right');
-    expect(expandedTargets.get('W9')?.[0]?.side).toBe('top');
+    expect(expandedTargets.get('W9')?.[0]?.side).toBe('right');
+
+    for (const request of expanded.requests) {
+      const geometry = expanded.geometries.get(request.target.nodeId);
+      if (!geometry) continue;
+      const port = request.target.options[0];
+      const stub = routeSegments([port.point, outward(port.point, port.side, MIN_BEND_SPACING)])[0];
+      expect(stub).toBeDefined();
+      if (!stub) continue;
+      for (const other of expanded.geometries.values()) {
+        if (other.nodeId === geometry.nodeId) continue;
+        expect(segmentCrossesObstacle(stub, other.envelope), `${request.id} landing stub enters ${other.nodeId} 3W fanout`).toBe(false);
+      }
+    }
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
     for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
@@ -157,6 +175,6 @@ describe('staggered adjacent connector-near splices', () => {
     expectTargetSide(results, 'W5', 'right');
     expectTargetSide(results, 'W6', 'right');
     expectTargetSide(results, 'W8', 'right');
-    expectTargetSide(results, 'W9', 'top');
+    expectTargetSide(results, 'W9', 'right');
   });
 });
