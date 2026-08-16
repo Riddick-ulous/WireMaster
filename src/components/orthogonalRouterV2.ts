@@ -28,8 +28,8 @@ const MAX_AXIS_LANES = 20;
 const RESERVED_PRIORITY_LANES = 6;
 const DUAL_LANE_LIMIT = 12;
 const SMALL_BEAM_LIMIT = 40;
-const BEAM_WIDTH = 8;
-const CANDIDATES_PER_BEAM_STATE = 6;
+const BEAM_WIDTH = 16;
+const CANDIDATES_PER_BEAM_STATE = 8;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -104,11 +104,6 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
   }
 
   const all = uniqueNumbers(values);
-  // Bend-spacing anchors and legal corridors exactly beside already-routed wires
-  // are not merely aesthetic suggestions. In dense junction layouts they can
-  // be the only valid way around a previous branch, so preserve a small set of
-  // the nearest reserved-wire lanes before generic obstacle edges consume the
-  // bounded search budget.
   const reservedPriority = uniqueNumbers(reservedLaneValues)
     .sort((left, right) => Math.abs(left - midpoint) - Math.abs(right - midpoint) || left - right)
     .slice(0, RESERVED_PRIORITY_LANES);
@@ -130,6 +125,16 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
 
 function routeKey(points: RoutePoint[]): string { return points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|') }
 function handlePairKey(candidate: PlannedCandidate): string { return `${candidate.route.sourceHandleId}>${candidate.route.targetHandleId}` }
+function routeTopologyKey(candidate: PlannedCandidate): string {
+  const points = candidate.route.points;
+  const orientations: string[] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    orientations.push(Math.abs(a.y - b.y) < 0.25 ? 'H' : 'V');
+  }
+  return `${handlePairKey(candidate)}:${orientations.join('')}`;
+}
 
 function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number): PlannedCandidate[] {
   const sorted = candidates.slice().sort((left, right) => compareCandidateMetric(left.metric, right.metric) || routeKey(left.route.points).localeCompare(routeKey(right.route.points)));
@@ -138,21 +143,37 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
   const selected: PlannedCandidate[] = [];
   const selectedRoutes = new Set<string>();
   const usedHandlePairs = new Set<string>();
+  const usedTopologies = new Set<string>();
+  const add = (candidate: PlannedCandidate) => {
+    selected.push(candidate);
+    selectedRoutes.add(routeKey(candidate.route.points));
+    usedHandlePairs.add(handlePairKey(candidate));
+    usedTopologies.add(routeTopologyKey(candidate));
+  };
 
+  // First retain one candidate for each terminal pair. This preserves splice
+  // side diversity when a junction has multiple landing ports.
   for (const candidate of sorted) {
     const pair = handlePairKey(candidate);
     if (usedHandlePairs.has(pair)) continue;
-    selected.push(candidate);
-    usedHandlePairs.add(pair);
-    selectedRoutes.add(routeKey(candidate.route.points));
+    add(candidate);
+    if (selected.length >= limit) return selected;
+  }
+
+  // Then retain the best geometrically distinct orthogonal topology for each
+  // pair. A slightly longer H-V-H-V-H dogleg can be essential when the cheap
+  // H-V-H route blocks a later branch, so the beam must see both.
+  for (const candidate of sorted) {
+    const key = routeTopologyKey(candidate);
+    if (usedTopologies.has(key)) continue;
+    add(candidate);
     if (selected.length >= limit) return selected;
   }
 
   for (const candidate of sorted) {
     const key = routeKey(candidate.route.points);
     if (selectedRoutes.has(key)) continue;
-    selected.push(candidate);
-    selectedRoutes.add(key);
+    add(candidate);
     if (selected.length >= limit) break;
   }
   return selected;
