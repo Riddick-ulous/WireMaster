@@ -124,11 +124,15 @@ describe('staggered adjacent connector-near splices', () => {
 
     const expanded = expandSpliceFanInRouting(requests, obstacles);
     expect(expanded.geometries.size).toBe(0);
-    const expandedSides = new Map(expanded.requests.map((request) => [request.id, request.target.options[0]?.side]));
-    expect(expandedSides.get('W5')).toBe('bottom');
-    expect(expandedSides.get('W6')).toBe('top');
-    expect(expandedSides.get('W8')).toBe('right');
-    expect(expandedSides.get('W9')).toBe('top');
+    const expandedTargets = new Map(expanded.requests.map((request) => [request.id, request.target.options]));
+    expect(expandedTargets.get('W5')).toHaveLength(1);
+    expect(expandedTargets.get('W6')).toHaveLength(1);
+    expect(expandedTargets.get('W8')).toHaveLength(1);
+    expect(expandedTargets.get('W9')).toHaveLength(1);
+    expect(expandedTargets.get('W5')?.[0]?.side).toBe('bottom');
+    expect(expandedTargets.get('W6')?.[0]?.side).toBe('top');
+    expect(expandedTargets.get('W8')?.[0]?.side).toBe('right');
+    expect(expandedTargets.get('W9')?.[0]?.side).toBe('top');
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
     for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
