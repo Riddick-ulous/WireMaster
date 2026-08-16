@@ -75,13 +75,19 @@ function sideTowardObstacle(point: RoutePoint, obstacle: RouteObstacle): Cardina
   const right = obstacle.x + obstacle.width;
   const top = obstacle.y;
   const bottom = obstacle.y + obstacle.height;
-  const candidates: Array<{ side: CardinalSide; distance: number }> = [
-    { side: 'left', distance: Math.abs(point.x - right) },
-    { side: 'right', distance: Math.abs(left - point.x) },
-    { side: 'top', distance: Math.abs(point.y - bottom) },
-    { side: 'bottom', distance: Math.abs(top - point.y) },
-  ];
-  return candidates.sort((a, b) => a.distance - b.distance)[0].side;
+  const horizontalGap = point.x < left ? left - point.x : point.x > right ? point.x - right : 0;
+  const verticalGap = point.y < top ? top - point.y : point.y > bottom ? point.y - bottom : 0;
+
+  // If the point projects onto one axis of the rectangle, the blocked side is
+  // unambiguous. This is the normal connector-near case and must not be
+  // confused by a numerically closer top/bottom edge line.
+  if (horizontalGap > 0 && verticalGap === 0) return point.x > right ? 'left' : 'right';
+  if (verticalGap > 0 && horizontalGap === 0) return point.y > bottom ? 'top' : 'bottom';
+
+  // For a truly diagonal placement choose the dominant direction from the
+  // splice toward the nearest rectangle corner.
+  if (horizontalGap >= verticalGap) return point.x > right ? 'left' : 'right';
+  return point.y > bottom ? 'top' : 'bottom';
 }
 
 function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: RouteObstacle[]): CardinalSide | null {
