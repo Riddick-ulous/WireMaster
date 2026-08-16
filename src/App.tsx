@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ConnectorGrid } from './components/ConnectorGrid';
 import { ElectricalViewer, type WireRenderStyle } from './components/ElectricalViewer';
+import { SpliceDialog, type SpliceDialogResult } from './components/SpliceDialog';
 import {
   addGenericConnector,
   applyPinEdits,
-  createConnectorSpliceForNet,
+  createConnectorSplice,
   createConnectorSpliceFromSplice,
-  createFreeSpliceForNet,
-  endpointKey,
+  createFreeSplice,
   setConnectorLabel,
   type PinEdit,
 } from './core/project';
@@ -16,7 +16,13 @@ import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
 import { TransactionHistory, type HistoryState } from './core/transactions';
-import type { Project, UUID, ViewerRotation, WireEndpoint } from './core/model';
+import type { Project, UUID, ViewerRotation } from './core/model';
+
+interface SpliceDialogState {
+  key: number;
+  initialNetId: UUID | null;
+  initialAnchorPinId: UUID | null;
+}
 
 export default function App() {
   const historyRef = useRef(new TransactionHistory<Project>(createDemoProject(), 30));
@@ -27,6 +33,8 @@ export default function App() {
   const [highlightedNetId, setHighlightedNetId] = useState<UUID | null>(null);
   const [wireRenderStyle, setWireRenderStyle] = useState<WireRenderStyle>('smooth');
   const [lastSavedPath, setLastSavedPath] = useState<string | null>(null);
+  const [spliceDialog, setSpliceDialog] = useState<SpliceDialogState | null>(null);
+  const spliceDialogKey = useRef(1);
 
   const publishHistory = useCallback((state: HistoryState<Project>) => {
     setHistoryState({ ...state, present: structuredClone(state.present) });
@@ -69,6 +77,7 @@ export default function App() {
     setSelectedConnectorId(next.subHarnesses[0].connectors[0]?.id ?? null);
     setHighlightedNetId(null);
     setLastSavedPath(null);
+    setSpliceDialog(null);
   }, [publishHistory]);
 
   const harness = project.subHarnesses.find((item) => item.id === activeHarnessId) ?? project.subHarnesses[0];
@@ -85,88 +94,48 @@ export default function App() {
     commit((draft) => setConnectorLabel(draft, connectorId, label));
   }, [commit]);
 
-  const createConnectorNearSplice = useCallback((pinId: UUID) => {
+  const openSpliceDialog = useCallback((initialNetId: UUID | null, initialAnchorPinId: UUID | null) => {
+    setSpliceDialog({ key: spliceDialogKey.current++, initialNetId, initialAnchorPinId });
+  }, []);
+
+  const openSpliceDialogForPin = useCallback((pinId: UUID) => {
+    const currentHarness = historyRef.current.value.subHarnesses.find((item) => item.id === activeHarnessId);
+    const pin = currentHarness?.connectors.flatMap((connector) => connector.pins).find((item) => item.id === pinId);
+    if (!pin?.netId) {
+      window.alert('Assign a net before creating a splice.');
+      return;
+    }
+    openSpliceDialog(pin.netId, pinId);
+  }, [activeHarnessId, openSpliceDialog]);
+
+  const submitSpliceDialog = useCallback((result: SpliceDialogResult) => {
     try {
-      const currentProject = historyRef.current.value;
-      const currentHarness = currentProject.subHarnesses.find((item) => item.id === activeHarnessId);
-      if (!currentHarness) throw new Error(`Unknown harness ${activeHarnessId}`);
-      const connector = currentHarness.connectors.find((item) => item.pins.some((pin) => pin.id === pinId));
-      const pin = connector?.pins.find((item) => item.id === pinId);
-      if (!connector || !pin) throw new Error(`Unknown pin ${pinId}`);
-      if (!pin.netId) throw new Error('Assign a net before creating a splice');
-
-      const existingTopology = currentHarness.splices.filter((splice) => splice.netId === pin.netId && splice.status !== 'ORPHANED');
-      if (!existingTopology.length) {
-        commit((draft) => { createConnectorSpliceForNet(draft, activeHarnessId, pinId); });
-        return;
-      }
-
-      const anchorEndpoint: WireEndpoint = { kind: 'pin', connectorId: connector.id, pinId };
-      const anchorKey = endpointKey(anchorEndpoint);
-      const upstreamCandidates = existingTopology.filter((splice) => splice.memberEndpoints.some((endpoint) => endpointKey(endpoint) === anchorKey));
-      if (!upstreamCandidates.length) {
-        throw new Error('This pin is not a direct branch of an existing splice. Select a pin that is currently connected to the upstream splice.');
-      }
-
-      let upstream = upstreamCandidates[0];
-      if (upstreamCandidates.length > 1) {
-        const answer = window.prompt(
-          `Select upstream splice for ${connector.displayId}/${pin.cavity}:\n${upstreamCandidates.map((splice) => splice.displayId).join(', ')}`,
-          upstream.displayId,
-        );
-        if (answer === null) return;
-        const selected = upstreamCandidates.find((splice) => splice.displayId.toLocaleLowerCase() === answer.trim().toLocaleLowerCase());
-        if (!selected) throw new Error(`Unknown upstream splice '${answer.trim()}'`);
-        upstream = selected;
-      }
-
-      const branchOptions = upstream.memberEndpoints.filter((endpoint) => endpointKey(endpoint) !== anchorKey);
-      const endpointLabel = (endpoint: WireEndpoint): string => {
-        if (endpoint.kind === 'splice') {
-          return currentHarness.splices.find((splice) => splice.id === endpoint.spliceId)?.displayId ?? `Splice ${endpoint.spliceId}`;
-        }
-        const branchConnector = currentHarness.connectors.find((item) => item.id === endpoint.connectorId);
-        const branchPin = branchConnector?.pins.find((item) => item.id === endpoint.pinId);
-        return `${branchConnector?.displayId ?? '?'} / cavity ${branchPin?.cavity ?? '?'}${branchPin?.pinName ? ` · ${branchPin.pinName}` : ''}`;
-      };
-
-      let branchesToMove: WireEndpoint[] = [];
-      if (branchOptions.length) {
-        const menu = branchOptions.map((endpoint, index) => `${index + 1}: ${endpointLabel(endpoint)}`).join('\n');
-        const answer = window.prompt(
-          `Create a new connector-near splice at ${connector.displayId}/${pin.cavity} from ${upstream.displayId}.\n\nMove additional branches by number, comma-separated. The anchor branch moves automatically.\n${menu}\n\nLeave empty to move only the anchor.`,
-          '',
-        );
-        if (answer === null) return;
-        const indexes = answer.trim()
-          ? [...new Set(answer.split(',').map((value) => Number.parseInt(value.trim(), 10)))]
-          : [];
-        if (indexes.some((index) => !Number.isInteger(index) || index < 1 || index > branchOptions.length)) {
-          throw new Error('Branch selection contains an invalid number');
-        }
-        branchesToMove = indexes.map((index) => branchOptions[index - 1]);
-      }
-
       commit((draft) => {
-        createConnectorSpliceFromSplice(draft, activeHarnessId, upstream.id, pinId, branchesToMove);
+        if (result.mode === 'BRANCH') {
+          createConnectorSpliceFromSplice(
+            draft,
+            activeHarnessId,
+            result.upstreamSpliceId,
+            result.anchorPinId,
+            result.branchesToMove,
+          );
+          return;
+        }
+
+        if (result.placement === 'CONNECTOR') {
+          if (!result.anchorPinId) throw new Error('Connector-near splice requires an anchor pin');
+          createConnectorSplice(draft, activeHarnessId, result.anchorPinId, result.memberEndpoints);
+          return;
+        }
+
+        createFreeSplice(draft, activeHarnessId, result.netId, result.memberEndpoints);
       });
+      setHighlightedNetId(result.netId);
+      setSpliceDialog(null);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
     }
   }, [activeHarnessId, commit]);
-
-  const createFreeSpliceForHighlightedNet = useCallback(() => {
-    if (!highlightedNetId) return;
-    try {
-      commit((draft) => {
-        const created = createFreeSpliceForNet(draft, harness.id, highlightedNetId);
-        const target = draft.subHarnesses.find((item) => item.id === harness.id)!;
-        target.viewerLayout.splicePositions[created.id] = { x: 390, y: 240 };
-      });
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
-    }
-  }, [commit, harness.id, highlightedNetId]);
 
   const selectConnector = useCallback((id: UUID) => {
     setSelectedConnectorId(id);
@@ -244,7 +213,7 @@ export default function App() {
                 onRename={(label) => renameConnector(connector.id, label)}
                 onEditPin={editPin}
                 onBulkEditPins={bulkEditPins}
-                onCreateSplice={createConnectorNearSplice}
+                onCreateSplice={openSpliceDialogForPin}
               />
             ))}
             {!harness.connectors.length && <div className="empty-state">Add a connector to start the harness.</div>}
@@ -264,11 +233,11 @@ export default function App() {
                 {netOptions.map((net) => <option key={net.id} value={net.id}>{net.name}</option>)}
               </select>
               <button
-                disabled={!highlightedNetId}
-                title={highlightedNetId ? 'Create a free splice for the selected unresolved net' : 'Select a net first'}
-                onClick={createFreeSpliceForHighlightedNet}
+                disabled={!project.nets.length}
+                title="Create or extend splice topology"
+                onClick={() => openSpliceDialog(highlightedNetId, null)}
               >
-                + Free splice
+                + Splice…
               </button>
             </div>
           </div>
@@ -288,6 +257,18 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {spliceDialog && (
+        <SpliceDialog
+          key={spliceDialog.key}
+          project={project}
+          harnessId={harness.id}
+          initialNetId={spliceDialog.initialNetId}
+          initialAnchorPinId={spliceDialog.initialAnchorPinId}
+          onCancel={() => setSpliceDialog(null)}
+          onSubmit={submitSpliceDialog}
+        />
+      )}
     </div>
   );
 }
