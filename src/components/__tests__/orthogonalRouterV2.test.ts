@@ -75,8 +75,8 @@ describe('orthogonal router v2 contract', () => {
   it('maintains bend spacing and wire spacing without longitudinal overlap', () => {
     const requests: RouteRequest[] = [0, 1, 2, 3].map((index) => ({
       id: `W${index + 1}`,
-      source: terminal(`L${index}`, `lp${index}`, 'right', 180, 100 + index * 32),
-      target: terminal(`R${index}`, `rp${index}`, 'left', 720, 118 + index * 32),
+      source: terminal(`L${index}`, `lp${index}`, 'right', 180, 100 + index * 48),
+      target: terminal(`R${index}`, `rp${index}`, 'left', 720, 140 + index * 48),
       sourceMinStraight: 70,
       targetMinStraight: 70,
     }));
