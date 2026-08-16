@@ -96,4 +96,41 @@ describe('staggered adjacent connector-near splices', () => {
       expect(routeCrossesObstacle(result.points, obstacles[0]), `${request.id} crosses C3`).toBe(false);
     }
   });
+
+  it('uses clean natural departures for two external branches on adjacent 3W splices', () => {
+    const c3 = connector();
+    const connectorPosition = { x: 300, y: 200 };
+    const s1Placement = connectorNearSplicePosition(splice('S1', 'P3'), c3, connectorPosition, 0);
+    const s2Placement = connectorNearSplicePosition(splice('S2', 'P4'), c3, connectorPosition, 0);
+    const s1 = spliceTerminal('S1', s1Placement.position);
+    const s2 = spliceTerminal('S2', s2Placement.position);
+    const s1Center = { x: s1Placement.position.x + 6, y: s1Placement.position.y + 6 };
+    const s2Center = { x: s2Placement.position.x + 6, y: s2Placement.position.y + 6 };
+
+    const obstacles: RouteObstacle[] = [
+      { id: 'C3-body', nodeId: 'C3', kind: 'node', x: 300, y: 200, width: 180, height: 143 },
+      { id: 'S1-body', nodeId: 'S1', kind: 'node', x: s1Placement.position.x, y: s1Placement.position.y, width: 12, height: 12 },
+      { id: 'S2-body', nodeId: 'S2', kind: 'node', x: s2Placement.position.x, y: s2Placement.position.y, width: 12, height: 12 },
+      spliceLabelObstacle('S1-label', s1Placement.position, 12, 12, s1Placement.labelSide, 'S1 · 3W'),
+      spliceLabelObstacle('S2-label', s2Placement.position, 12, 12, s2Placement.labelSide, 'S2 · 3W'),
+    ];
+
+    const requests: RouteRequest[] = [
+      { id: 'W5', source: terminal('C2A', 'C2A-p3', 'left', 900, s1Center.y), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W6', source: terminal('TOP1', 'TOP1-p3', 'bottom', s1Center.x + 50, 40), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W8', source: terminal('C2B', 'C2B-p4', 'left', 900, s2Center.y), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W9', source: terminal('TOP2', 'TOP2-p4', 'bottom', s2Center.x + 50, 40), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+    ];
+
+    const expanded = expandSpliceFanInRouting(requests, obstacles);
+    expect(expanded.geometries.size).toBe(0);
+
+    const results = planOrthogonalRoutesV2(requests, obstacles);
+    for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
+
+    expect(results.get('W5')?.status === 'ROUTED' ? results.get('W5')!.targetSide : null).toBe('bottom');
+    expect(results.get('W6')?.status === 'ROUTED' ? results.get('W6')!.targetSide : null).toBe('top');
+    expect(results.get('W8')?.status === 'ROUTED' ? results.get('W8')!.targetSide : null).toBe('right');
+    expect(results.get('W9')?.status === 'ROUTED' ? results.get('W9')!.targetSide : null).toBe('top');
+  });
 });
