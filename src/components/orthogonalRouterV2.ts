@@ -113,6 +113,10 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
     sourceCoord + MIN_BEND_SPACING,
     targetCoord - MIN_BEND_SPACING,
     targetCoord + MIN_BEND_SPACING,
+    sourceCoord - 2 * MIN_BEND_SPACING,
+    sourceCoord + 2 * MIN_BEND_SPACING,
+    targetCoord - 2 * MIN_BEND_SPACING,
+    targetCoord + 2 * MIN_BEND_SPACING,
     midpoint,
     sourceCoord,
     targetCoord,
@@ -146,10 +150,13 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
   const usedHandlePairs = new Set<string>();
   const usedTopologies = new Set<string>();
   const add = (candidate: PlannedCandidate) => {
+    const key = routeKey(candidate.route.points);
+    if (selectedRoutes.has(key)) return false;
     selected.push(candidate);
-    selectedRoutes.add(routeKey(candidate.route.points));
+    selectedRoutes.add(key);
     usedHandlePairs.add(handlePairKey(candidate));
     usedTopologies.add(routeTopologyKey(candidate));
+    return true;
   };
 
   for (const candidate of sorted) {
@@ -166,10 +173,31 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
     if (selected.length >= limit) return selected;
   }
 
+  // A locally shortest route can consume the only corridor of a later wire.
+  // Preserve progressively roomier alternatives of each topology at routing-
+  // grid increments rather than filling the beam only with near-identical
+  // shortest paths. This gives the future-routability lookahead meaningful
+  // choices while keeping the candidate budget bounded.
+  const topologyGroups = new Map<string, PlannedCandidate[]>();
   for (const candidate of sorted) {
-    const key = routeKey(candidate.route.points);
-    if (selectedRoutes.has(key)) continue;
-    add(candidate);
+    const key = routeTopologyKey(candidate);
+    const group = topologyGroups.get(key) ?? [];
+    group.push(candidate);
+    topologyGroups.set(key, group);
+  }
+  for (const extraLength of [MIN_BEND_SPACING, 2 * MIN_BEND_SPACING, 3 * MIN_BEND_SPACING]) {
+    for (const group of topologyGroups.values()) {
+      const bestLength = group[0]?.metric.length;
+      if (bestLength === undefined) continue;
+      const candidate = group.find((item) => item.metric.length + 0.25 >= bestLength + extraLength && !selectedRoutes.has(routeKey(item.route.points)));
+      if (!candidate) continue;
+      add(candidate);
+      if (selected.length >= limit) return selected;
+    }
+  }
+
+  for (const candidate of sorted) {
+    if (!add(candidate)) continue;
     if (selected.length >= limit) break;
   }
   return selected;
