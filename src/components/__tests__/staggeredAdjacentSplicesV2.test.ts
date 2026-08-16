@@ -105,7 +105,7 @@ describe('staggered adjacent connector-near splices', () => {
     }
   });
 
-  it('fans both adjacent 3W splices radially outward and away from each other', () => {
+  it('fans both adjacent 3W splices radially outward in the C1-C3-C2 screenshot layout', () => {
     const c3 = connector();
     const connectorPosition = { x: 300, y: 200 };
     const s1Placement = connectorNearSplicePosition(splice('S1', 'P3'), c3, connectorPosition, 0);
@@ -124,10 +124,10 @@ describe('staggered adjacent connector-near splices', () => {
     ];
 
     const requests: RouteRequest[] = [
-      { id: 'W5', source: terminal('C2A', 'C2A-p3', 'left', 900, s1Center.y), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
-      { id: 'W6', source: terminal('TOP1', 'TOP1-p3', 'bottom', s1Center.x, 40), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
-      { id: 'W8', source: terminal('C2B', 'C2B-p4', 'left', 900, s2Center.y), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
-      { id: 'W9', source: terminal('TOP2', 'TOP2-p4', 'bottom', s2Center.x, 40), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W4', source: terminal('C1', 'C1-p3', 'right', 180, 130), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W5', source: terminal('C2', 'C2-p3', 'left', 900, 270), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W7', source: terminal('C1', 'C1-p4', 'right', 180, 170), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W8', source: terminal('C2', 'C2-p4', 'left', 900, 340), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
     ];
 
     const expanded = expandSpliceFanInRouting(requests, obstacles);
@@ -147,14 +147,10 @@ describe('staggered adjacent connector-near splices', () => {
     expect((s2Geometry?.envelope.y ?? 0) + (s2Geometry?.envelope.height ?? 0) / 2).toBeGreaterThan(s2Center.y);
 
     const expandedTargets = new Map(expanded.requests.map((request) => [request.id, request.target.options]));
-    expect(expandedTargets.get('W5')).toHaveLength(1);
-    expect(expandedTargets.get('W6')).toHaveLength(1);
-    expect(expandedTargets.get('W8')).toHaveLength(1);
-    expect(expandedTargets.get('W9')).toHaveLength(1);
-    expect(expandedTargets.get('W5')?.[0]?.side).toBe('right');
-    expect(expandedTargets.get('W6')?.[0]?.side).toBe('right');
-    expect(expandedTargets.get('W8')?.[0]?.side).toBe('right');
-    expect(expandedTargets.get('W9')?.[0]?.side).toBe('right');
+    for (const wireId of ['W4', 'W5', 'W7', 'W8']) {
+      expect(expandedTargets.get(wireId)).toHaveLength(1);
+      expect(expandedTargets.get(wireId)?.[0]?.side).toBe('right');
+    }
 
     for (const request of expanded.requests) {
       const geometry = expanded.geometries.get(request.target.nodeId);
@@ -170,11 +166,13 @@ describe('staggered adjacent connector-near splices', () => {
     }
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
-    for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
-
-    expectTargetSide(results, 'W5', 'right');
-    expectTargetSide(results, 'W6', 'right');
-    expectTargetSide(results, 'W8', 'right');
-    expectTargetSide(results, 'W9', 'right');
+    const compactBottomLimit = s2Center.y + 3 * MIN_BEND_SPACING;
+    for (const request of requests) {
+      const result = results.get(request.id);
+      expect(result?.status, `${request.id} should route`).toBe('ROUTED');
+      if (!result || result.status !== 'ROUTED') continue;
+      expect(result.targetSide).toBe('right');
+      expect(Math.max(...result.points.map((point) => point.y)), `${request.id} makes an unnecessary lower outside loop`).toBeLessThanOrEqual(compactBottomLimit);
+    }
   });
 });
