@@ -50,6 +50,11 @@ interface Segment {
   orientation: 'h' | 'v';
 }
 
+interface ReservedRoute {
+  request: RouteRequest;
+  segments: Segment[];
+}
+
 interface PlannedCandidate {
   plan: OrthogonalRoutePlan;
   points: RoutePoint[];
@@ -57,11 +62,19 @@ interface PlannedCandidate {
   score: number;
 }
 
+interface PlannedSet {
+  plans: Map<string, OrthogonalRoutePlan>;
+  score: number;
+}
+
 const EPSILON = 0.25;
-const LANE_SPACING = 18;
-const OUTSIDE_MARGIN = 34;
-const OUTSIDE_STEPS = 6;
-const OBSTACLE_CLEARANCE = 10;
+/** Minimum centerline spacing for parallel/nearby independent wires. */
+export const MIN_ROUTE_SPACING = 18;
+const LANE_SPACING = 22;
+const OUTSIDE_MARGIN = 42;
+const OUTSIDE_STEPS = 12;
+/** Keep wire centerlines this far away from node bounding boxes. */
+export const ROUTE_OBSTACLE_CLEARANCE = 14;
 
 function outward(point: RoutePoint, side: CardinalSide, distance: number): RoutePoint {
   if (side === 'left') return { x: point.x - distance, y: point.y };
@@ -99,6 +112,21 @@ function simplifyPoints(input: RoutePoint[]): RoutePoint[] {
     result.push(point);
   }
   return result;
+}
+
+function containsUTurn(points: RoutePoint[]): boolean {
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    const c = points[index + 1];
+    const sameX = Math.abs(a.x - b.x) < EPSILON && Math.abs(b.x - c.x) < EPSILON;
+    const sameY = Math.abs(a.y - b.y) < EPSILON && Math.abs(b.y - c.y) < EPSILON;
+    if (!sameX && !sameY) continue;
+    const first = sameX ? b.y - a.y : b.x - a.x;
+    const second = sameX ? c.y - b.y : c.x - b.x;
+    if (first * second < -EPSILON) return true;
+  }
+  return false;
 }
 
 function segmentsFor(points: RoutePoint[]): Segment[] {
@@ -150,18 +178,20 @@ function orderedRange(a: number, b: number): [number, number] {
   return a <= b ? [a, b] : [b, a];
 }
 
+function rangesOverlap(a0: number, a1: number, b0: number, b1: number): number {
+  const [aa0, aa1] = orderedRange(a0, a1);
+  const [bb0, bb1] = orderedRange(b0, b1);
+  return Math.max(0, Math.min(aa1, bb1) - Math.max(aa0, bb0));
+}
+
 function collinearOverlapLength(left: Segment, right: Segment): number {
   if (left.orientation !== right.orientation) return 0;
   if (left.orientation === 'h') {
     if (Math.abs(left.a.y - right.a.y) >= EPSILON) return 0;
-    const [l0, l1] = orderedRange(left.a.x, left.b.x);
-    const [r0, r1] = orderedRange(right.a.x, right.b.x);
-    return Math.max(0, Math.min(l1, r1) - Math.max(l0, r0));
+    return rangesOverlap(left.a.x, left.b.x, right.a.x, right.b.x);
   }
   if (Math.abs(left.a.x - right.a.x) >= EPSILON) return 0;
-  const [l0, l1] = orderedRange(left.a.y, left.b.y);
-  const [r0, r1] = orderedRange(right.a.y, right.b.y);
-  return Math.max(0, Math.min(l1, r1) - Math.max(l0, r0));
+  return rangesOverlap(left.a.y, left.b.y, right.a.y, right.b.y);
 }
 
 function pointAtSegmentEndpoint(point: RoutePoint, segment: Segment): boolean {
@@ -179,11 +209,33 @@ function perpendicularIntersection(left: Segment, right: Segment): RoutePoint | 
   return point;
 }
 
+function pointToSegmentDistance(point: RoutePoint, segment: Segment): number {
+  if (segment.orientation === 'h') {
+    const [x0, x1] = orderedRange(segment.a.x, segment.b.x);
+    const dx = point.x < x0 ? x0 - point.x : point.x > x1 ? point.x - x1 : 0;
+    return Math.hypot(dx, point.y - segment.a.y);
+  }
+  const [y0, y1] = orderedRange(segment.a.y, segment.b.y);
+  const dy = point.y < y0 ? y0 - point.y : point.y > y1 ? point.y - y1 : 0;
+  return Math.hypot(point.x - segment.a.x, dy);
+}
+
+function segmentDistance(left: Segment, right: Segment): number {
+  if (collinearOverlapLength(left, right) > EPSILON) return 0;
+  if (perpendicularIntersection(left, right)) return 0;
+  return Math.min(
+    pointToSegmentDistance(left.a, right),
+    pointToSegmentDistance(left.b, right),
+    pointToSegmentDistance(right.a, left),
+    pointToSegmentDistance(right.b, left),
+  );
+}
+
 function segmentCrossesRect(segment: Segment, obstacle: RouteObstacle): boolean {
-  const left = obstacle.x - OBSTACLE_CLEARANCE;
-  const right = obstacle.x + obstacle.width + OBSTACLE_CLEARANCE;
-  const top = obstacle.y - OBSTACLE_CLEARANCE;
-  const bottom = obstacle.y + obstacle.height + OBSTACLE_CLEARANCE;
+  const left = obstacle.x - ROUTE_OBSTACLE_CLEARANCE;
+  const right = obstacle.x + obstacle.width + ROUTE_OBSTACLE_CLEARANCE;
+  const top = obstacle.y - ROUTE_OBSTACLE_CLEARANCE;
+  const bottom = obstacle.y + obstacle.height + ROUTE_OBSTACLE_CLEARANCE;
   if (segment.orientation === 'h') {
     if (segment.a.y <= top + EPSILON || segment.a.y >= bottom - EPSILON) return false;
     const [x0, x1] = orderedRange(segment.a.x, segment.b.x);
@@ -194,64 +246,82 @@ function segmentCrossesRect(segment: Segment, obstacle: RouteObstacle): boolean 
   return y1 > top + EPSILON && y0 < bottom - EPSILON;
 }
 
-function parallelProximity(left: Segment, right: Segment): number {
-  if (left.orientation !== right.orientation) return 0;
-  if (left.orientation === 'h') {
-    const distance = Math.abs(left.a.y - right.a.y);
-    if (distance < EPSILON || distance >= LANE_SPACING * 0.7) return 0;
-    const [l0, l1] = orderedRange(left.a.x, left.b.x);
-    const [r0, r1] = orderedRange(right.a.x, right.b.x);
-    return Math.max(0, Math.min(l1, r1) - Math.max(l0, r0));
-  }
-  const distance = Math.abs(left.a.x - right.a.x);
-  if (distance < EPSILON || distance >= LANE_SPACING * 0.7) return 0;
-  const [l0, l1] = orderedRange(left.a.y, left.b.y);
-  const [r0, r1] = orderedRange(right.a.y, right.b.y);
-  return Math.max(0, Math.min(l1, r1) - Math.max(l0, r0));
+function endpointSegmentForNode(request: RouteRequest, segmentIndex: number, segmentCount: number, nodeId: string): boolean {
+  if (request.source.nodeId === nodeId && segmentIndex === 0) return true;
+  return request.target.nodeId === nodeId && segmentIndex === segmentCount - 1;
 }
 
-function candidateScore(
+function routesShareEndpointAtSegments(
   request: RouteRequest,
-  segments: Segment[],
-  reserved: Segment[],
-  obstacles: RouteObstacle[],
-): number {
-  let overlapCount = 0;
-  let overlapLength = 0;
-  let crossings = 0;
-  let proximity = 0;
-  let obstacleHits = 0;
+  segmentIndex: number,
+  segmentCount: number,
+  existing: ReservedRoute,
+  existingIndex: number,
+): boolean {
+  const existingCount = existing.segments.length;
+  const candidateNodes: string[] = [];
+  if (segmentIndex === 0) candidateNodes.push(request.source.nodeId);
+  if (segmentIndex === segmentCount - 1) candidateNodes.push(request.target.nodeId);
+  const existingNodes: string[] = [];
+  if (existingIndex === 0) existingNodes.push(existing.request.source.nodeId);
+  if (existingIndex === existingCount - 1) existingNodes.push(existing.request.target.nodeId);
+  return candidateNodes.some((nodeId) => existingNodes.includes(nodeId));
+}
 
-  for (const segment of segments) {
-    for (const existing of reserved) {
-      const overlap = collinearOverlapLength(segment, existing);
-      if (overlap > EPSILON) {
-        overlapCount += 1;
-        overlapLength += overlap;
-      }
-      const intersection = perpendicularIntersection(segment, existing);
-      if (intersection && !(pointAtSegmentEndpoint(intersection, segment) && pointAtSegmentEndpoint(intersection, existing))) crossings += 1;
-      proximity += parallelProximity(segment, existing);
-    }
+function candidateGeometryIsValid(
+  request: RouteRequest,
+  points: RoutePoint[],
+  segments: Segment[],
+  reserved: ReservedRoute[],
+  obstacles: RouteObstacle[],
+): boolean {
+  if (containsUTurn(points)) return false;
+
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex];
     for (const obstacle of obstacles) {
-      if (obstacle.nodeId === request.source.nodeId || obstacle.nodeId === request.target.nodeId) continue;
-      if (segmentCrossesRect(segment, obstacle)) obstacleHits += 1;
+      if (!segmentCrossesRect(segment, obstacle)) continue;
+      // The first source stub and last target stub are allowed to leave/enter their own keepout.
+      if (endpointSegmentForNode(request, segmentIndex, segments.length, obstacle.nodeId)) continue;
+      return false;
+    }
+
+    for (const existing of reserved) {
+      for (let existingIndex = 0; existingIndex < existing.segments.length; existingIndex += 1) {
+        const other = existing.segments[existingIndex];
+        if (collinearOverlapLength(segment, other) > EPSILON) return false;
+        const intersection = perpendicularIntersection(segment, other);
+        if (intersection) continue; // Crossings are legal but expensive; overlap is not.
+        const distance = segmentDistance(segment, other);
+        if (distance + EPSILON >= MIN_ROUTE_SPACING) continue;
+        // At a common connector/splice endpoint, short local fan-out is allowed to be closer
+        // than the global spacing. It still may not longitudinally overlap.
+        if (routesShareEndpointAtSegments(request, segmentIndex, segments.length, existing, existingIndex)) continue;
+        return false;
+      }
     }
   }
+  return true;
+}
 
+function crossingCount(segments: Segment[], reserved: ReservedRoute[]): number {
+  let total = 0;
+  for (const segment of segments) {
+    for (const existing of reserved) {
+      for (const other of existing.segments) {
+        const intersection = perpendicularIntersection(segment, other);
+        if (intersection && !(pointAtSegmentEndpoint(intersection, segment) && pointAtSegmentEndpoint(intersection, other))) total += 1;
+      }
+    }
+  }
+  return total;
+}
+
+function candidateScore(segments: Segment[], reserved: ReservedRoute[]): number {
+  const crossings = crossingCount(segments, reserved);
   const length = segments.reduce((sum, segment) => sum + segmentLength(segment), 0);
   const bends = Math.max(0, segments.length - 1);
-
-  // Lexicographic intent encoded as weights:
-  // 1) never share a longitudinal segment, 2) avoid nodes, 3) minimize crossings,
-  // 4) keep parallel tracks visually separated, 5) then optimize length/bends.
-  return overlapCount * 1_000_000_000
-    + overlapLength * 1_000_000
-    + obstacleHits * 10_000_000
-    + crossings * 150_000
-    + proximity * 100
-    + length
-    + bends * 12;
+  return crossings * 250_000 + bends * 24 + length;
 }
 
 function uniqueNumbers(values: number[]): number[] {
@@ -268,7 +338,7 @@ function laneCandidates(
   sourceOut: RoutePoint,
   targetOut: RoutePoint,
   obstacles: RouteObstacle[],
-  reserved: Segment[],
+  reserved: ReservedRoute[],
 ): number[] {
   const sourceCoord = axis === 'x' ? sourceOut.x : sourceOut.y;
   const targetCoord = axis === 'x' ? targetOut.x : targetOut.y;
@@ -283,20 +353,27 @@ function laneCandidates(
   const maxCoord = Math.max(sourceCoord, targetCoord, obstacleMax);
 
   const values = [midpoint];
-  for (let step = -4; step <= 4; step += 1) values.push(midpoint + step * LANE_SPACING);
-  for (let step = 1; step <= 3; step += 1) {
+  for (let step = -6; step <= 6; step += 1) values.push(midpoint + step * LANE_SPACING);
+  for (let step = 1; step <= 5; step += 1) {
     values.push(sourceCoord - step * LANE_SPACING, sourceCoord + step * LANE_SPACING);
     values.push(targetCoord - step * LANE_SPACING, targetCoord + step * LANE_SPACING);
+  }
+  for (const obstacle of obstacles) {
+    const low = axis === 'x' ? obstacle.x : obstacle.y;
+    const high = axis === 'x' ? obstacle.x + obstacle.width : obstacle.y + obstacle.height;
+    values.push(low - ROUTE_OBSTACLE_CLEARANCE - LANE_SPACING, high + ROUTE_OBSTACLE_CLEARANCE + LANE_SPACING);
   }
   for (let step = 0; step < OUTSIDE_STEPS; step += 1) {
     values.push(minCoord - OUTSIDE_MARGIN - step * LANE_SPACING);
     values.push(maxCoord + OUTSIDE_MARGIN + step * LANE_SPACING);
   }
 
-  for (const segment of reserved) {
-    if ((axis === 'x' && segment.orientation !== 'v') || (axis === 'y' && segment.orientation !== 'h')) continue;
-    const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
-    values.push(coordinate - LANE_SPACING, coordinate + LANE_SPACING);
+  for (const existing of reserved) {
+    for (const segment of existing.segments) {
+      if ((axis === 'x' && segment.orientation !== 'v') || (axis === 'y' && segment.orientation !== 'h')) continue;
+      const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
+      values.push(coordinate - LANE_SPACING, coordinate + LANE_SPACING);
+    }
   }
 
   return uniqueNumbers(values).sort((left, right) => Math.abs(left - midpoint) - Math.abs(right - midpoint) || left - right);
@@ -304,9 +381,9 @@ function laneCandidates(
 
 function bestCandidate(
   request: RouteRequest,
-  reserved: Segment[],
+  reserved: ReservedRoute[],
   obstacles: RouteObstacle[],
-): PlannedCandidate {
+): PlannedCandidate | null {
   let best: PlannedCandidate | null = null;
 
   for (const sourceOption of request.source.options) {
@@ -317,7 +394,8 @@ function bestCandidate(
         for (const lane of laneCandidates(axis, sourceOut, targetOut, obstacles, reserved)) {
           const points = materialize(sourceOption, targetOption, axis, lane, request.sourceBreakout, request.targetBreakout);
           const segments = segmentsFor(points);
-          const score = candidateScore(request, segments, reserved, obstacles);
+          if (!candidateGeometryIsValid(request, points, segments, reserved, obstacles)) continue;
+          const score = candidateScore(segments, reserved);
           const plan: OrthogonalRoutePlan = {
             sourceHandleId: sourceOption.key,
             targetHandleId: targetOption.key,
@@ -337,32 +415,62 @@ function bestCandidate(
       }
     }
   }
-
-  if (!best) throw new Error(`No orthogonal route candidates for ${request.id}`);
   return best;
 }
 
-export function planOrthogonalRoutes(requests: RouteRequest[], obstacles: RouteObstacle[] = []): Map<string, OrthogonalRoutePlan> {
-  const ordered = requests.slice().sort((left, right) => {
-    const center = (terminal: RouteTerminal): RoutePoint => terminal.options[0]?.point ?? { x: 0, y: 0 };
-    const leftSource = center(left.source);
-    const leftTarget = center(left.target);
-    const rightSource = center(right.source);
-    const rightTarget = center(right.target);
-    const leftSpan = Math.abs(leftSource.x - leftTarget.x) + Math.abs(leftSource.y - leftTarget.y);
-    const rightSpan = Math.abs(rightSource.x - rightTarget.x) + Math.abs(rightSource.y - rightTarget.y);
-    return rightSpan - leftSpan || left.id.localeCompare(right.id, undefined, { numeric: true });
-  });
+function terminalCenter(terminal: RouteTerminal): RoutePoint {
+  if (!terminal.options.length) return { x: 0, y: 0 };
+  return {
+    x: terminal.options.reduce((sum, option) => sum + option.point.x, 0) / terminal.options.length,
+    y: terminal.options.reduce((sum, option) => sum + option.point.y, 0) / terminal.options.length,
+  };
+}
 
-  const reserved: Segment[] = [];
-  const result = new Map<string, OrthogonalRoutePlan>();
-  for (const request of ordered) {
+function requestSpan(request: RouteRequest): number {
+  const source = terminalCenter(request.source);
+  const target = terminalCenter(request.target);
+  return Math.abs(source.x - target.x) + Math.abs(source.y - target.y);
+}
+
+function planInOrder(requests: RouteRequest[], obstacles: RouteObstacle[]): PlannedSet | null {
+  const reserved: ReservedRoute[] = [];
+  const plans = new Map<string, OrthogonalRoutePlan>();
+  let score = 0;
+  for (const request of requests) {
     if (!request.source.options.length || !request.target.options.length) continue;
     const candidate = bestCandidate(request, reserved, obstacles);
-    result.set(request.id, candidate.plan);
-    reserved.push(...candidate.segments);
+    if (!candidate) return null;
+    plans.set(request.id, candidate.plan);
+    score += candidate.score;
+    reserved.push({ request, segments: candidate.segments });
   }
-  return result;
+  return { plans, score };
+}
+
+function candidateOrders(requests: RouteRequest[]): RouteRequest[][] {
+  const byId = (left: RouteRequest, right: RouteRequest) => left.id.localeCompare(right.id, undefined, { numeric: true });
+  const coord = (request: RouteRequest) => {
+    const source = terminalCenter(request.source);
+    const target = terminalCenter(request.target);
+    return { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 };
+  };
+  return [
+    requests.slice().sort((left, right) => requestSpan(right) - requestSpan(left) || byId(left, right)),
+    requests.slice().sort((left, right) => requestSpan(left) - requestSpan(right) || byId(left, right)),
+    requests.slice().sort((left, right) => coord(left).y - coord(right).y || coord(left).x - coord(right).x || byId(left, right)),
+    requests.slice().sort((left, right) => coord(left).x - coord(right).x || coord(left).y - coord(right).y || byId(left, right)),
+    requests.slice().sort(byId),
+  ];
+}
+
+export function planOrthogonalRoutes(requests: RouteRequest[], obstacles: RouteObstacle[] = []): Map<string, OrthogonalRoutePlan> {
+  let best: PlannedSet | null = null;
+  for (const order of candidateOrders(requests)) {
+    const planned = planInOrder(order, obstacles);
+    if (!planned) continue;
+    if (!best || planned.score < best.score) best = planned;
+  }
+  return best?.plans ?? new Map();
 }
 
 /** Materializes a plan for tests/debug tooling using the same terminal geometry the planner saw. */
@@ -388,4 +496,19 @@ export function orthogonalCrossingCount(left: RoutePoint[], right: RoutePoint[])
     }
   }
   return total;
+}
+
+export function minimumRouteDistance(left: RoutePoint[], right: RoutePoint[]): number {
+  let minimum = Number.POSITIVE_INFINITY;
+  for (const a of segmentsFor(left)) {
+    for (const b of segmentsFor(right)) {
+      if (perpendicularIntersection(a, b)) continue;
+      minimum = Math.min(minimum, segmentDistance(a, b));
+    }
+  }
+  return minimum;
+}
+
+export function routeCrossesObstacle(points: RoutePoint[], obstacle: RouteObstacle): boolean {
+  return segmentsFor(points).some((segment) => segmentCrossesRect(segment, obstacle));
 }
