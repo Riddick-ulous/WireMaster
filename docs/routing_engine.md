@@ -93,16 +93,17 @@ If no valid route exists, the engine returns `UNROUTED`. The viewer must not dra
 
 An electrically active wire may therefore be graphically `UNROUTED` without changing its domain-level `WireInstance.status`.
 
-## 3. Soft objectives
+## 3. Global objective order
 
-Only valid routes are scored. In descending priority:
+Routing is optimized lexicographically. A lower-priority objective may never be improved by making a higher-priority objective worse.
 
-1. minimize crossings with other wires,
-2. minimize route churn relative to an already-valid previous route,
-3. minimize number of bends,
-4. minimize total Manhattan length,
-5. prefer the natural main axis implied by terminal sides,
-6. prefer clean parallel/bundled corridor placement when this does not violate minimum spacing.
+1. minimize the number of `UNROUTED` wires,
+2. minimize crossings with other wires,
+3. minimize route churn relative to an already-valid previous route,
+4. minimize number of bends,
+5. minimize total Manhattan length,
+6. prefer the natural main axis implied by terminal sides,
+7. prefer clean parallel/bundled corridor placement when this does not violate minimum spacing.
 
 The result must be deterministic for identical geometry.
 
@@ -139,7 +140,7 @@ The target architecture is a Manhattan visibility/grid router rather than a fixe
 6. Build axis-aligned traversable segments between visible coordinates.
 7. Search route states with incoming direction and current straight-run length so 180-degree turns and too-short bends are impossible by construction.
 8. Reject self-intersections, invalid wire contact, wire overlap and spacing violations as hard constraints.
-9. Score only valid routes using the soft objectives.
+9. Score only valid routes using the global objective order.
 10. Route all wires globally/deterministically with bounded alternatives/backtracking or beam search so an early locally-good route may be replaced when it blocks later wires.
 11. Return explicit polylines and explicit `UNROUTED` entries.
 
