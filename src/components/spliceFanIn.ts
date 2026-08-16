@@ -120,6 +120,31 @@ function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: Rou
   return nearest ? sideTowardObstacle(center, nearest.obstacle) : null;
 }
 
+function outerAdjacentConnectorSplice(
+  nodeId: string,
+  center: RoutePoint,
+  connector: ConnectorReference | null,
+  primaryBlockedSide: CardinalSide | null,
+  obstacles: RouteObstacle[],
+): boolean {
+  if (!connector || !primaryBlockedSide) return false;
+  const horizontalConnector = primaryBlockedSide === 'left' || primaryBlockedSide === 'right';
+  return obstacles.some((obstacle) => {
+    if ((obstacle.kind !== 'node' && obstacle.kind !== undefined)
+      || obstacle.nodeId === nodeId
+      || obstacle.nodeId === connector.obstacle.nodeId
+      || obstacle.width >= 40
+      || obstacle.height >= 40) return false;
+    const otherCenter = obstacleCenter(obstacle);
+    const otherConnectorDistance = rawRectDistance(otherCenter, connector.obstacle);
+    const radialDelta = otherConnectorDistance - connector.distance;
+    const transverseDelta = horizontalConnector ? Math.abs(otherCenter.y - center.y) : Math.abs(otherCenter.x - center.x);
+    return radialDelta > 0
+      && radialDelta <= ADJACENT_SPLICE_RADIAL_LIMIT
+      && transverseDelta <= ADJACENT_SPLICE_TRANSVERSE_LIMIT;
+  });
+}
+
 /**
  * Adjacent connector-near splices are radially staggered. The transverse side
  * pointing at the neighbouring junction is reserved on BOTH splices. Otherwise
@@ -191,16 +216,25 @@ export function buildSpliceFanInGeometry(
   const logicalCenter = centerOfTerminal(terminal);
   const connector = nearestConnector(nodeId, logicalCenter, obstacles);
   const blockedSide = connector ? sideTowardObstacle(logicalCenter, connector.obstacle) : null;
-  const needsEnvelope = blockedSide ? branchCount >= 3 : branchCount > 4;
+  const lowDegreeRadialMerge = blockedSide
+    ? branchCount === 2 && outerAdjacentConnectorSplice(nodeId, logicalCenter, connector, blockedSide, obstacles)
+    : false;
+  const needsEnvelope = blockedSide ? branchCount >= 3 || lowDegreeRadialMerge : branchCount > 4;
   if (!needsEnvelope) return null;
-  const secondaryBlockedSide = secondaryBlockedNeighborSide(nodeId, logicalCenter, connector, blockedSide, obstacles);
-  const availableSides = SIDES.filter((side) => side !== blockedSide && side !== secondaryBlockedSide);
+  const secondaryBlockedSide = lowDegreeRadialMerge ? null : secondaryBlockedNeighborSide(nodeId, logicalCenter, connector, blockedSide, obstacles);
+  const availableSides = lowDegreeRadialMerge
+    ? [opposite(blockedSide as CardinalSide)]
+    : SIDES.filter((side) => side !== blockedSide && side !== secondaryBlockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
-  const portsPerSide = basePerSide + (blockedSide && branchCount > availableSides.length * 2 ? 1 : 0);
-  const size = Math.max(
-    SPLICE_FANIN_MIN_LENGTH,
-    2 * SPLICE_FANIN_PADDING + Math.max(0, portsPerSide - 1) * SPLICE_PORT_PITCH,
-  );
+  const portsPerSide = lowDegreeRadialMerge
+    ? branchCount
+    : basePerSide + (blockedSide && branchCount > availableSides.length * 2 ? 1 : 0);
+  const size = lowDegreeRadialMerge
+    ? SPLICE_FANIN_MIN_LENGTH
+    : Math.max(
+      SPLICE_FANIN_MIN_LENGTH,
+      2 * SPLICE_FANIN_PADDING + Math.max(0, portsPerSide - 1) * SPLICE_PORT_PITCH,
+    );
   const envelope = envelopeRect(logicalCenter, size, blockedSide);
   envelope.id = `fanin-${nodeId}`;
   envelope.nodeId = nodeId;
