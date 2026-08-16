@@ -21,6 +21,7 @@ const WIRE_LABEL_OFFSET = 9;
 const SPLICE_LABEL_FONT_HEIGHT = 9;
 const SPLICE_LABEL_CHAR_WIDTH = 5.0;
 const SPLICE_LABEL_GAP = 17;
+const SPLICE_LABEL_BASELINE_GAP = 1;
 
 export function estimateWireLabelWidth(text: string): number {
   return Math.max(24, Math.ceil(text.length * WIRE_LABEL_CHAR_WIDTH));
@@ -89,6 +90,12 @@ export function wireLabelGeometry(id: string, point: RoutePoint, side: CardinalS
   return { textX, textY, anchor, rotation, obstacle, minStraight: Math.max(MIN_BEND_SPACING, Math.ceil(farDistance)) };
 }
 
+/**
+ * Splice annotations are hard routing keepouts, but they must not consume the
+ * terminal direction they describe. The text is therefore offset to one side
+ * of the splice's cardinal routing baseline, leaving that baseline clear by at
+ * least SPLICE_LABEL_BASELINE_GAP after padding.
+ */
 export function spliceLabelObstacle(
   id: string,
   nodePosition: RoutePoint,
@@ -102,10 +109,18 @@ export function spliceLabelObstacle(
   const centerY = nodePosition.y + nodeHeight / 2;
   let x = centerX - textWidth / 2;
   let y = centerY - SPLICE_LABEL_FONT_HEIGHT / 2;
-  if (side === 'right') x = nodePosition.x + nodeWidth + SPLICE_LABEL_GAP;
-  else if (side === 'left') x = nodePosition.x - SPLICE_LABEL_GAP - textWidth;
-  else if (side === 'top') y = nodePosition.y - SPLICE_LABEL_GAP - SPLICE_LABEL_FONT_HEIGHT;
-  else y = nodePosition.y + nodeHeight + SPLICE_LABEL_GAP;
+
+  if (side === 'right' || side === 'left') {
+    x = side === 'right'
+      ? nodePosition.x + nodeWidth + SPLICE_LABEL_GAP
+      : nodePosition.x - SPLICE_LABEL_GAP - textWidth;
+    y = centerY - SPLICE_LABEL_FONT_HEIGHT - LABEL_CLEARANCE - SPLICE_LABEL_BASELINE_GAP;
+  } else {
+    x = centerX - textWidth - LABEL_CLEARANCE - SPLICE_LABEL_BASELINE_GAP;
+    y = side === 'top'
+      ? nodePosition.y - SPLICE_LABEL_GAP - SPLICE_LABEL_FONT_HEIGHT
+      : nodePosition.y + nodeHeight + SPLICE_LABEL_GAP;
+  }
 
   return {
     id,
