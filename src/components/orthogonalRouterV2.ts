@@ -6,6 +6,7 @@ import {
   manhattan,
   outward,
   rectForObstacle,
+  routeSegments,
   samePoint,
   type CandidateMetric,
   type OrthogonalRouteResult,
@@ -20,7 +21,7 @@ import { expandSpliceFanInRouting, finalizeSpliceFanInRoutes } from './spliceFan
 
 interface BatchMetric { unrouted: number; crossings: number; churn: number; bends: number; length: number }
 interface PlannedSet { routes: Map<string, OrthogonalRouteResult>; metric: BatchMetric }
-interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: ReservedRoute[]; metric: BatchMetric; futureBlocked: number }
+interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: ReservedRoute[]; metric: BatchMetric }
 
 const LANE_STEP = 28;
 const OUTSIDE_MARGIN = 84;
@@ -28,9 +29,10 @@ const MAX_AXIS_LANES = 20;
 const RESERVED_PRIORITY_LANES = 6;
 const DUAL_LANE_LIMIT = 12;
 const SMALL_BEAM_LIMIT = 40;
-const BEAM_WIDTH = 16;
+const BEAM_WIDTH = 8;
 const CANDIDATES_PER_BEAM_STATE = 8;
-const LOOKAHEAD_REQUEST_LIMIT = 12;
+const RIPUP_CANDIDATE_LIMIT = 12;
+const RIPUP_MAX_PASSES = 3;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -173,11 +175,6 @@ function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number):
     if (selected.length >= limit) return selected;
   }
 
-  // A locally shortest route can consume the only corridor of a later wire.
-  // Preserve progressively roomier alternatives of each topology at routing-
-  // grid increments rather than filling the beam only with near-identical
-  // shortest paths. This gives the future-routability lookahead meaningful
-  // choices while keeping the candidate budget bounded.
   const topologyGroups = new Map<string, PlannedCandidate[]>();
   for (const candidate of sorted) {
     const key = routeTopologyKey(candidate);
@@ -284,42 +281,92 @@ function greedyPlan(requests: RouteRequest[], obstacles: RouteObstacle[]): Plann
   return { routes, metric };
 }
 
-function futureBlockedCount(requests: RouteRequest[], reserved: ReservedRoute[], obstacles: RouteObstacle[]): number {
-  let blocked = 0;
-  for (const request of requests.slice(0, LOOKAHEAD_REQUEST_LIMIT)) {
-    if (!request.source.options.length || !request.target.options.length || !topCandidates(request, reserved, obstacles, 1).length) blocked += 1;
-  }
-  return blocked;
-}
-
 function beamPlan(requests: RouteRequest[], obstacles: RouteObstacle[]): PlannedSet {
-  let states: BeamState[] = [{ routes: new Map(), reserved: [], metric: emptyMetric(), futureBlocked: 0 }];
-  for (let requestIndex = 0; requestIndex < requests.length; requestIndex += 1) {
-    const request = requests[requestIndex];
-    const remaining = requests.slice(requestIndex + 1);
+  let states: BeamState[] = [{ routes: new Map(), reserved: [], metric: emptyMetric() }];
+  for (const request of requests) {
     const next: BeamState[] = [];
     for (const state of states) {
       const candidates = topCandidates(request, state.reserved, obstacles, CANDIDATES_PER_BEAM_STATE);
       if (!candidates.length) {
         const routes = new Map(state.routes);
         routes.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' });
-        const reserved = state.reserved;
-        next.push({ routes, reserved, metric: { ...state.metric, unrouted: state.metric.unrouted + 1 }, futureBlocked: futureBlockedCount(remaining, reserved, obstacles) });
+        next.push({ routes, reserved: state.reserved, metric: { ...state.metric, unrouted: state.metric.unrouted + 1 } });
         continue;
       }
       for (const candidate of candidates) {
         const routes = new Map(state.routes);
         routes.set(request.id, candidate.route);
-        const reserved = [...state.reserved, { request, route: candidate.route, segments: candidate.segments }];
-        next.push({ routes, reserved, metric: addMetric(state.metric, candidate.metric), futureBlocked: futureBlockedCount(remaining, reserved, obstacles) });
+        next.push({ routes, reserved: [...state.reserved, { request, route: candidate.route, segments: candidate.segments }], metric: addMetric(state.metric, candidate.metric) });
       }
     }
-    states = next
-      .sort((left, right) => left.futureBlocked - right.futureBlocked || compareBatch(left.metric, right.metric))
-      .slice(0, BEAM_WIDTH);
+    states = next.sort((left, right) => compareBatch(left.metric, right.metric)).slice(0, BEAM_WIDTH);
   }
-  const best = states.sort((left, right) => compareBatch(left.metric, right.metric))[0] ?? { routes: new Map<string, OrthogonalRouteResult>(), reserved: [], metric: emptyMetric(), futureBlocked: 0 };
+  const best = states[0] ?? { routes: new Map<string, OrthogonalRouteResult>(), reserved: [], metric: emptyMetric() };
   return { routes: best.routes, metric: best.metric };
+}
+
+function reservedFromRoutes(requests: RouteRequest[], routes: Map<string, OrthogonalRouteResult>, excluded: Set<string>): ReservedRoute[] {
+  const reserved: ReservedRoute[] = [];
+  for (const request of requests) {
+    if (excluded.has(request.id)) continue;
+    const route = routes.get(request.id);
+    if (!route || route.status !== 'ROUTED') continue;
+    reserved.push({ request, route, segments: routeSegments(route.points) });
+  }
+  return reserved;
+}
+
+/**
+ * Bounded rip-up/reroute repair for the exceptional case where the globally
+ * selected routes leave a wire UNROUTED. One existing route is temporarily
+ * removed, the missing wire gets first choice, then the removed wire must find
+ * a new contract-valid route around it. The swap is committed only when both
+ * wires are valid, so the repair can only reduce (never increase) UNROUTED
+ * count. Normal zero-UNROUTED harnesses pay no repair cost.
+ */
+function repairUnroutedRoutes(
+  initial: Map<string, OrthogonalRouteResult>,
+  requests: RouteRequest[],
+  obstacles: RouteObstacle[],
+): Map<string, OrthogonalRouteResult> {
+  const routes = new Map(initial);
+  const orderedRequests = requests.slice().sort(byId);
+
+  for (let pass = 0; pass < RIPUP_MAX_PASSES; pass += 1) {
+    let changed = false;
+    const missing = orderedRequests.filter((request) => routes.get(request.id)?.status !== 'ROUTED');
+    if (!missing.length) break;
+
+    for (const missingRequest of missing) {
+      const blockers = orderedRequests.filter((request) => routes.get(request.id)?.status === 'ROUTED');
+      let repaired = false;
+
+      for (const blocker of blockers) {
+        const excluded = new Set([missingRequest.id, blocker.id]);
+        const baseReserved = reservedFromRoutes(orderedRequests, routes, excluded);
+        const missingCandidates = topCandidates(missingRequest, baseReserved, obstacles, RIPUP_CANDIDATE_LIMIT);
+        if (!missingCandidates.length) continue;
+
+        for (const missingCandidate of missingCandidates) {
+          const withMissing: ReservedRoute[] = [
+            ...baseReserved,
+            { request: missingRequest, route: missingCandidate.route, segments: missingCandidate.segments },
+          ];
+          const blockerCandidate = topCandidates(blocker, withMissing, obstacles, RIPUP_CANDIDATE_LIMIT)[0];
+          if (!blockerCandidate) continue;
+
+          routes.set(missingRequest.id, missingCandidate.route);
+          routes.set(blocker.id, blockerCandidate.route);
+          repaired = true;
+          changed = true;
+          break;
+        }
+        if (repaired) break;
+      }
+    }
+    if (!changed) break;
+  }
+  return routes;
 }
 
 export function planOrthogonalRoutesV2(requests: RouteRequest[], obstacles: RouteObstacle[] = []): Map<string, OrthogonalRouteResult> {
@@ -341,7 +388,7 @@ export function planOrthogonalRoutesV2(requests: RouteRequest[], obstacles: Rout
       if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
     }
   }
-  const routed = best?.routes ?? new Map<string, OrthogonalRouteResult>();
+  const routed = repairUnroutedRoutes(best?.routes ?? new Map<string, OrthogonalRouteResult>(), workingRequests, workingObstacles);
   return finalizeSpliceFanInRoutes(routed, requests, expanded.geometries);
 }
 
