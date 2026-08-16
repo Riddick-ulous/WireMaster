@@ -120,7 +120,7 @@ function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: Rou
   return nearest ? sideTowardObstacle(center, nearest.obstacle) : null;
 }
 
-function outerAdjacentConnectorSpliceSide(
+function adjacentConnectorSpliceSide(
   nodeId: string,
   center: RoutePoint,
   connector: ConnectorReference | null,
@@ -137,11 +137,11 @@ function outerAdjacentConnectorSpliceSide(
     .map((obstacle) => {
       const otherCenter = obstacleCenter(obstacle);
       const otherConnectorDistance = rawRectDistance(otherCenter, connector.obstacle);
-      const radialDelta = otherConnectorDistance - connector.distance;
+      const radialDelta = Math.abs(otherConnectorDistance - connector.distance);
       const transverseDelta = horizontalConnector ? Math.abs(otherCenter.y - center.y) : Math.abs(otherCenter.x - center.x);
       return { otherCenter, radialDelta, transverseDelta };
     })
-    .filter((item) => item.radialDelta > 0
+    .filter((item) => item.radialDelta > 0.25
       && item.radialDelta <= ADJACENT_SPLICE_RADIAL_LIMIT
       && item.transverseDelta <= ADJACENT_SPLICE_TRANSVERSE_LIMIT)
     .sort((a, b) => manhattan(center, a.otherCenter) - manhattan(center, b.otherCenter));
@@ -231,10 +231,10 @@ export function buildSpliceFanInGeometry(
   const logicalCenter = centerOfTerminal(terminal);
   const connector = nearestConnector(nodeId, logicalCenter, obstacles);
   const blockedSide = connector ? sideTowardObstacle(logicalCenter, connector.obstacle) : null;
-  const outerNeighborSide = blockedSide && branchCount === 2
-    ? outerAdjacentConnectorSpliceSide(nodeId, logicalCenter, connector, blockedSide, obstacles)
+  const adjacentNeighborSide = blockedSide && branchCount === 2
+    ? adjacentConnectorSpliceSide(nodeId, logicalCenter, connector, blockedSide, obstacles)
     : null;
-  const lowDegreeRadialMerge = outerNeighborSide !== null;
+  const lowDegreeRadialMerge = adjacentNeighborSide !== null;
   const needsEnvelope = blockedSide ? branchCount >= 3 || lowDegreeRadialMerge : branchCount > 4;
   if (!needsEnvelope) return null;
   const secondaryBlockedSide = lowDegreeRadialMerge ? null : secondaryBlockedNeighborSide(nodeId, logicalCenter, connector, blockedSide, obstacles);
@@ -252,7 +252,7 @@ export function buildSpliceFanInGeometry(
       2 * SPLICE_FANIN_PADDING + Math.max(0, portsPerSide - 1) * SPLICE_PORT_PITCH,
     );
   const envelope = envelopeRect(logicalCenter, size, blockedSide);
-  if (lowDegreeRadialMerge) shiftEnvelopeAwayFrom(envelope, outerNeighborSide);
+  if (lowDegreeRadialMerge) shiftEnvelopeAwayFrom(envelope, adjacentNeighborSide);
   envelope.id = `fanin-${nodeId}`;
   envelope.nodeId = nodeId;
 
