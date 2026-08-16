@@ -324,7 +324,12 @@ function reconcileHarnessWires(
 
   for (const [key, candidates] of candidateWiresByDesired) {
     if (matchedDesiredKeys.has(key) || !candidates.length) continue;
-    blockedDesiredKeys.add(key);
+    const item = desired.get(key)!;
+    const explicitSpliceTopology = item.a.kind === 'splice' || item.b.kind === 'splice';
+    // An ambiguous legacy wire must remain reviewable, but once the user has
+    // explicitly defined splice topology it must not prevent those requested
+    // edges from being materialized with new identities.
+    if (!explicitSpliceTopology) blockedDesiredKeys.add(key);
     for (const wire of candidates) {
       if (!matchedWireIds.has(wire.id)) wire.status = 'NEEDS_REVIEW';
     }
