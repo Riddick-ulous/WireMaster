@@ -7,7 +7,7 @@ import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
 import { TransactionHistory, type HistoryState } from './core/transactions';
-import type { Project, UUID } from './core/model';
+import type { Project, UUID, ViewerRotation } from './core/model';
 
 export default function App() {
   const historyRef = useRef(new TransactionHistory<Project>(createDemoProject(), 30));
@@ -81,6 +81,14 @@ export default function App() {
     requestAnimationFrame(() => document.getElementById(`connector-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }, []);
 
+  const rotateConnector = useCallback((connectorId: UUID) => {
+    commit((draft) => {
+      const targetHarness = draft.subHarnesses.find((item) => item.id === activeHarnessId)!;
+      const current = targetHarness.viewerLayout.connectorRotations[connectorId] ?? 0;
+      targetHarness.viewerLayout.connectorRotations[connectorId] = ((current + 90) % 360) as ViewerRotation;
+    });
+  }, [activeHarnessId, commit]);
+
   const netOptions = useMemo(() => project.nets.slice().sort((a, b) => a.name.localeCompare(b.name)), [project.nets]);
 
   const saveJson = useCallback(async () => {
@@ -130,7 +138,7 @@ export default function App() {
         <aside className="editor-pane">
           <div className="pane-title">
             <div><strong>{harness.name}</strong><span>{harness.connectors.length} connectors · {harness.wires.filter((w) => w.status === 'ACTIVE').length} active wires</span></div>
-            <button onClick={() => commit((draft) => { const created = addGenericConnector(draft, harness.id, 4); draft.subHarnesses.find((h) => h.id === harness.id)!.viewerLayout.connectorPositions[created.id] = { x: 120, y: 120 + harness.connectors.length * 80 }; })}>+ Connector</button>
+            <button onClick={() => commit((draft) => { const created = addGenericConnector(draft, harness.id, 4); const target = draft.subHarnesses.find((h) => h.id === harness.id)!; target.viewerLayout.connectorPositions[created.id] = { x: 120, y: 120 + harness.connectors.length * 80 }; target.viewerLayout.connectorRotations[created.id] = 0; })}>+ Connector</button>
           </div>
           <div className="connector-list">
             {harness.connectors.map((connector) => (
@@ -172,6 +180,7 @@ export default function App() {
               wireRenderStyle={wireRenderStyle}
               onSelectConnector={selectConnector}
               onHighlightNet={setHighlightedNetId}
+              onRotateConnector={rotateConnector}
               onLayoutChange={(connectorId, x, y) => commit((draft) => { const target = draft.subHarnesses.find((h) => h.id === harness.id)!; target.viewerLayout.connectorPositions[connectorId] = { x, y }; })}
             />
           </div>
