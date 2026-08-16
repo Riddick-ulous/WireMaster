@@ -65,6 +65,30 @@ describe('explicit splice branch moves', () => {
     expect(net.connectivityStatus).toBe('RESOLVED');
   });
 
+  it('does not let an ambiguous legacy direct wire block an explicitly defined first splice', () => {
+    const { project, harness, connectors, net } = assignedProject(2);
+    reconcileProject(project);
+    const legacyWire = harness.wires.find((wire) => wire.netId === net.id)!;
+    expect(legacyWire.status).toBe('ACTIVE');
+
+    const third = addGenericConnector(project, harness.id, 1);
+    assignPinNetByName(project, third.pins[0].id, net.name);
+    reconcileProject(project);
+    expect(legacyWire.status).toBe('NEEDS_REVIEW');
+
+    const splice = createConnectorSplice(project, harness.id, third.pins[0].id, [
+      endpoint(connectors[0]),
+      endpoint(connectors[1]),
+    ]);
+    reconcileProject(project);
+
+    const active = harness.wires.filter((wire) => wire.netId === net.id && wire.status === 'ACTIVE');
+    expect(active).toHaveLength(3);
+    expect(active.every((wire) => [wire.endpointA, wire.endpointB].some((item) => item.kind === 'splice' && item.spliceId === splice.id))).toBe(true);
+    expect(legacyWire.status).toBe('NEEDS_REVIEW');
+    expect(net.connectivityStatus).toBe('RESOLVED');
+  });
+
   it('creates a free splice for an unresolved net only when no explicit topology exists', () => {
     const { project, harness, connectors, net } = assignedProject(3);
     const splice = createFreeSpliceForNet(project, harness.id, net.id);
