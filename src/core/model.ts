@@ -5,7 +5,9 @@ export type PropertyValue<T> =
   | { mode: 'explicit'; value: T | null };
 
 export type ConnectivityStatus = 'UNRESOLVED' | 'RESOLVED' | 'CONFIRMED';
-export type WireStatus = 'ACTIVE' | 'BROKEN' | 'DANGLING' | 'ORPHANED' | 'NEEDS_REVIEW';
+export type ReconciliationStatus = 'ACTIVE' | 'BROKEN' | 'DANGLING' | 'ORPHANED' | 'NEEDS_REVIEW';
+export type WireStatus = ReconciliationStatus;
+export type SpliceStatus = ReconciliationStatus;
 export type ViewerRotation = 0 | 90 | 180 | 270;
 
 export interface NetClass {
@@ -89,6 +91,8 @@ export interface SpliceInstance {
   placement: 'CONNECTOR' | 'FREE';
   ownerConnectorId: UUID | null;
   anchorPinId: UUID | null;
+  memberEndpoints: WireEndpoint[];
+  status: SpliceStatus;
 }
 
 export interface Point {
