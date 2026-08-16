@@ -17,6 +17,15 @@ export const SPLICE_SIZE_PX = 12;
 export const CONNECTOR_SPLICE_BASE_GAP_PX = 56;
 export const CONNECTOR_SPLICE_STAGGER_PX = 28;
 
+/**
+ * A connector-near splice is a small junction marker inside a controlled local
+ * routing zone. It keeps a smaller body clearance than a connector/free splice
+ * so adjacent staggered junctions do not consume each other's transverse
+ * approach corridors. The physical marker, label and junction envelope remain
+ * hard obstacles.
+ */
+export const CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX = 6;
+
 export interface ConnectorNearSplicePlacement {
   position: RoutePoint;
   labelSide: CardinalSide;
