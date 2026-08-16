@@ -24,7 +24,8 @@ interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: Rese
 
 const LANE_STEP = 28;
 const OUTSIDE_MARGIN = 84;
-const MAX_AXIS_LANES = 12;
+const MAX_AXIS_LANES = 20;
+const RESERVED_PRIORITY_LANES = 6;
 const DUAL_LANE_LIMIT = 12;
 const SMALL_BEAM_LIMIT = 40;
 const BEAM_WIDTH = 8;
@@ -85,17 +86,32 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
   }
   values.push(minimum - OUTSIDE_MARGIN, maximum + OUTSIDE_MARGIN);
 
+  const reservedLaneValues: number[] = [];
   for (const existing of reserved) {
     for (const segment of existing.segments) {
       if ((axis === 'x' && segment.orientation === 'v') || (axis === 'y' && segment.orientation === 'h')) {
         const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
-        values.push(coordinate - MIN_WIRE_SPACING, coordinate + MIN_WIRE_SPACING);
-        values.push(coordinate - 2 * MIN_WIRE_SPACING, coordinate + 2 * MIN_WIRE_SPACING);
+        const adjacent = [
+          coordinate - MIN_WIRE_SPACING,
+          coordinate + MIN_WIRE_SPACING,
+          coordinate - 2 * MIN_WIRE_SPACING,
+          coordinate + 2 * MIN_WIRE_SPACING,
+        ];
+        values.push(...adjacent);
+        reservedLaneValues.push(...adjacent);
       }
     }
   }
 
   const all = uniqueNumbers(values);
+  // Bend-spacing anchors and legal corridors exactly beside already-routed wires
+  // are not merely aesthetic suggestions. In dense junction layouts they can
+  // be the only valid way around a previous branch, so preserve a small set of
+  // the nearest reserved-wire lanes before generic obstacle edges consume the
+  // bounded search budget.
+  const reservedPriority = uniqueNumbers(reservedLaneValues)
+    .sort((left, right) => Math.abs(left - midpoint) - Math.abs(right - midpoint) || left - right)
+    .slice(0, RESERVED_PRIORITY_LANES);
   const mandatory = uniqueNumbers([
     sourceCoord - MIN_BEND_SPACING,
     sourceCoord + MIN_BEND_SPACING,
@@ -104,6 +120,7 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
     midpoint,
     sourceCoord,
     targetCoord,
+    ...reservedPriority,
   ]);
   const remainder = all
     .filter((value) => !mandatory.some((priority) => Math.abs(priority - value) < 0.25))
