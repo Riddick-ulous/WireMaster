@@ -28,6 +28,9 @@ export const CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX = 6;
 
 export interface ConnectorNearSplicePlacement {
   position: RoutePoint;
+  /** Side where the annotation is drawn. For connector-near splices this is
+   * deliberately the connector-facing/anchor side, leaving the external fanout
+   * sides unobstructed. */
   labelSide: CardinalSide;
   radialGap: number;
   staggerLane: 0 | 1;
@@ -48,23 +51,23 @@ export function connectorNearSplicePosition(
   if (rotation === 180) {
     return {
       position: { x: connectorPosition.x - radialGap - SPLICE_SIZE_PX, y: pinCenterY - SPLICE_SIZE_PX / 2 },
-      labelSide: 'left', radialGap, staggerLane,
+      labelSide: 'right', radialGap, staggerLane,
     };
   }
   if (rotation === 90) {
     return {
       position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y + CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX + radialGap },
-      labelSide: 'bottom', radialGap, staggerLane,
+      labelSide: 'top', radialGap, staggerLane,
     };
   }
   if (rotation === 270) {
     return {
       position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y - radialGap - SPLICE_SIZE_PX },
-      labelSide: 'top', radialGap, staggerLane,
+      labelSide: 'bottom', radialGap, staggerLane,
     };
   }
   return {
     position: { x: connectorPosition.x + CONNECTOR_WIDTH_PX + radialGap, y: pinCenterY - SPLICE_SIZE_PX / 2 },
-    labelSide: 'right', radialGap, staggerLane,
+    labelSide: 'left', radialGap, staggerLane,
   };
 }
