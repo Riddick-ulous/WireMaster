@@ -2,21 +2,25 @@ import { useEffect, useMemo } from 'react';
 import {
   Background,
   BaseEdge,
+  ConnectionMode,
   Controls,
   Handle,
   Position,
   ReactFlow,
   getBezierPath,
   useNodesState,
+  useUpdateNodeInternals,
   type Edge,
   type EdgeProps,
   type Node,
   type NodeProps,
 } from '@xyflow/react';
-import type { ConnectorInstance, PinEndpoint, Project, UUID, WireInstance } from '../core/model';
+import type { ConnectorInstance, PinEndpoint, Project, UUID, ViewerRotation, WireInstance } from '../core/model';
 
 interface ConnectorNodeData extends Record<string, unknown> {
   connector: ConnectorInstance;
+  rotation: ViewerRotation;
+  onRotate: (connectorId: UUID) => void;
 }
 
 type ConnectorNode = Node<ConnectorNodeData, 'connector'>;
@@ -29,28 +33,113 @@ function isActivePinWire(wire: WireInstance): wire is ActivePinWire {
   return wire.status === 'ACTIVE' && wire.endpointA.kind === 'pin' && wire.endpointB.kind === 'pin';
 }
 
-function ConnectorNodeView({ data }: NodeProps<ConnectorNode>) {
+function handlePositionForRotation(rotation: ViewerRotation): Position {
+  if (rotation === 90) return Position.Bottom;
+  if (rotation === 180) return Position.Left;
+  if (rotation === 270) return Position.Top;
+  return Position.Right;
+}
+
+function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const handlePosition = handlePositionForRotation(data.rotation);
+  const horizontal = data.rotation === 90 || data.rotation === 270;
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => updateNodeInternals(id));
+    return () => cancelAnimationFrame(frame);
+  }, [data.rotation, id, updateNodeInternals]);
+
   return (
-    <div className="viewer-connector">
-      <div className="viewer-connector-title">{data.connector.displayId} · {data.connector.label}</div>
-      {data.connector.pins.map((pin) => (
-        <div className="viewer-pin" key={pin.id}>
-          <Handle id={`t-${pin.id}`} type="target" position={Position.Left} className="pin-handle left" />
-          <span className="cavity">{pin.cavity}</span>
-          <span>{pin.pinName || '—'}</span>
-          <Handle id={`s-${pin.id}`} type="source" position={Position.Right} className="pin-handle right" />
-        </div>
-      ))}
+    <div className={`viewer-connector rotation-${data.rotation} ${horizontal ? 'horizontal' : 'vertical'}`}>
+      <div className="viewer-connector-title">
+        <span>{data.connector.displayId} · {data.connector.label}</span>
+        <button
+          type="button"
+          className="viewer-rotate nodrag nopan"
+          title="Rotate connector 90°"
+          aria-label={`Rotate ${data.connector.displayId} 90 degrees`}
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onRotate(data.connector.id);
+          }}
+        >
+          ↻
+        </button>
+      </div>
+      <div className="viewer-pins">
+        {data.connector.pins.map((pin) => (
+          <div className="viewer-pin" key={pin.id}>
+            <Handle
+              id={`p-${pin.id}`}
+              type="source"
+              position={handlePosition}
+              className="pin-handle"
+            />
+            <span className="cavity">{pin.cavity}</span>
+            <span className="pin-name">{pin.pinName || '—'}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
+}
+
+function outwardPoint(x: number, y: number, position: Position, distance: number): { x: number; y: number } {
+  if (position === Position.Left) return { x: x - distance, y };
+  if (position === Position.Right) return { x: x + distance, y };
+  if (position === Position.Top) return { x, y: y - distance };
+  return { x, y: y + distance };
+}
+
+function endpointLabelPosition(x: number, y: number, position: Position): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
+  if (position === Position.Left) return { x: x - 10, y: y - 5, anchor: 'end' };
+  if (position === Position.Right) return { x: x + 10, y: y - 5, anchor: 'start' };
+  if (position === Position.Top) return { x, y: y - 10, anchor: 'middle' };
+  return { x, y: y + 16, anchor: 'middle' };
+}
+
+function orthogonalPath(
+  sourceX: number,
+  sourceY: number,
+  sourcePosition: Position,
+  targetX: number,
+  targetY: number,
+  targetPosition: Position,
+  laneOffset: number,
+): string {
+  const sourceHorizontal = sourcePosition === Position.Left || sourcePosition === Position.Right;
+  const targetHorizontal = targetPosition === Position.Left || targetPosition === Position.Right;
+
+  if (sourceHorizontal && targetHorizontal) {
+    const laneX = (sourceX + targetX) / 2 + laneOffset;
+    return `M ${sourceX} ${sourceY} L ${laneX} ${sourceY} L ${laneX} ${targetY} L ${targetX} ${targetY}`;
+  }
+
+  if (!sourceHorizontal && !targetHorizontal) {
+    const laneY = (sourceY + targetY) / 2 + laneOffset;
+    return `M ${sourceX} ${sourceY} L ${sourceX} ${laneY} L ${targetX} ${laneY} L ${targetX} ${targetY}`;
+  }
+
+  const stubDistance = 34 + Math.abs(laneOffset);
+  const sourceOut = outwardPoint(sourceX, sourceY, sourcePosition, stubDistance);
+  const targetOut = outwardPoint(targetX, targetY, targetPosition, stubDistance);
+
+  if (sourceHorizontal) {
+    return `M ${sourceX} ${sourceY} L ${sourceOut.x} ${sourceOut.y} L ${sourceOut.x} ${targetOut.y} L ${targetOut.x} ${targetOut.y} L ${targetX} ${targetY}`;
+  }
+
+  return `M ${sourceX} ${sourceY} L ${sourceOut.x} ${sourceOut.y} L ${targetOut.x} ${sourceOut.y} L ${targetOut.x} ${targetOut.y} L ${targetX} ${targetY}`;
 }
 
 function WireEdge({
   id,
   sourceX,
   sourceY,
+  sourcePosition,
   targetX,
   targetY,
+  targetPosition,
   data,
   style,
   markerStart,
@@ -65,23 +154,20 @@ function WireEdge({
 
   let path: string;
   if (routing === 'orthogonal') {
-    const laneX = (sourceX + targetX) / 2 + laneOffset;
-    path = [
-      `M ${sourceX} ${sourceY}`,
-      `L ${laneX} ${sourceY}`,
-      `L ${laneX} ${targetY}`,
-      `L ${targetX} ${targetY}`,
-    ].join(' ');
+    path = orthogonalPath(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, laneOffset);
   } else {
     [path] = getBezierPath({
       sourceX,
       sourceY,
-      sourcePosition: Position.Right,
+      sourcePosition,
       targetX,
       targetY,
-      targetPosition: Position.Left,
+      targetPosition,
     });
   }
+
+  const sourceLabel = endpointLabelPosition(sourceX, sourceY, sourcePosition);
+  const targetLabel = endpointLabelPosition(targetX, targetY, targetPosition);
 
   return (
     <>
@@ -96,18 +182,18 @@ function WireEdge({
       {wireInfo && (
         <g className="wire-end-labels" opacity={labelOpacity} pointerEvents="none">
           <text
-            x={sourceX + 10}
-            y={sourceY - 6}
-            textAnchor="start"
+            x={sourceLabel.x}
+            y={sourceLabel.y}
+            textAnchor={sourceLabel.anchor}
             fill={labelFill}
             className="wire-end-label"
           >
             {wireInfo}
           </text>
           <text
-            x={targetX - 10}
-            y={targetY - 6}
-            textAnchor="end"
+            x={targetLabel.x}
+            y={targetLabel.y}
+            textAnchor={targetLabel.anchor}
             fill={labelFill}
             className="wire-end-label"
           >
@@ -158,10 +244,11 @@ interface Props {
   wireRenderStyle: WireRenderStyle;
   onSelectConnector: (id: UUID) => void;
   onHighlightNet: (id: UUID | null) => void;
+  onRotateConnector: (id: UUID) => void;
   onLayoutChange: (connectorId: UUID, x: number, y: number) => void;
 }
 
-export function ElectricalViewer({ project, harnessId, selectedConnectorId, highlightedNetId, wireRenderStyle, onSelectConnector, onHighlightNet, onLayoutChange }: Props) {
+export function ElectricalViewer({ project, harnessId, selectedConnectorId, highlightedNetId, wireRenderStyle, onSelectConnector, onHighlightNet, onRotateConnector, onLayoutChange }: Props) {
   const harness = project.subHarnesses.find((item) => item.id === harnessId)!;
   const wireClasses = project.wireClasses;
 
@@ -169,9 +256,13 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     id: connector.id,
     type: 'connector',
     position: harness.viewerLayout.connectorPositions[connector.id] ?? { x: 80 + index * 380, y: 120 },
-    data: { connector },
+    data: {
+      connector,
+      rotation: harness.viewerLayout.connectorRotations[connector.id] ?? 0,
+      onRotate: onRotateConnector,
+    },
     selected: connector.id === selectedConnectorId,
-  })), [harness.connectors, harness.viewerLayout.connectorPositions, selectedConnectorId]);
+  })), [harness.connectors, harness.viewerLayout.connectorPositions, harness.viewerLayout.connectorRotations, onRotateConnector, selectedConnectorId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<ConnectorNode>(desiredNodes);
   useEffect(() => {
@@ -198,9 +289,9 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     return {
       id: wire.id,
       source: wire.endpointA.connectorId,
-      sourceHandle: `s-${wire.endpointA.pinId}`,
+      sourceHandle: `p-${wire.endpointA.pinId}`,
       target: wire.endpointB.connectorId,
-      targetHandle: `t-${wire.endpointB.pinId}`,
+      targetHandle: `p-${wire.endpointB.pinId}`,
       type: 'wire-edge',
       animated: highlighted,
       style: { stroke: color, strokeWidth: highlighted ? 5 : 2.5, opacity: dimmed ? 0.18 : 1 },
@@ -221,6 +312,7 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       edges={edges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
+      connectionMode={ConnectionMode.Loose}
       onNodesChange={onNodesChange}
       onNodeDragStop={(_, node) => onLayoutChange(node.id, node.position.x, node.position.y)}
       onNodeClick={(_, node) => onSelectConnector(node.id)}
