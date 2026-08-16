@@ -1,23 +1,23 @@
 # WireMaster – Project Context
 
 ## Current stage
-M0.1 bootstrap / vertical slice — **implementation complete, PR #1 ready for final merge gate**.
+M0.2 splices + deeper reconciliation — **in progress** on `m0.2-splices-reconciliation`.
 
-M0.1 feature work is frozen. The only remaining gate before merge is:
-1. final local visual confirmation of the last rotated-wire-label offset fix
-2. exact-head CI green on web-core, Linux Tauri and Windows Tauri
+M0.1 was merged to `main` as PR #1 at commit `e1a297210d8542be2f80c53cccb4264a31785175` and is frozen except for regressions discovered by later work.
 
-After that, merge PR #1 and start M0.2 from updated `main`.
+M0.2 is extending the existing TypeScript domain core and resolver incrementally. Do not rebuild M0.1 modules from scratch.
 
 ## Non-negotiable invariants
 - Domain model is the single source of truth; editor/viewer are views.
 - Internal UUIDs are stable and independent from display IDs/names.
-- Nets are project-wide; wires belong to a sub-harness.
+- Nets are project-wide; wires and splices belong to a sub-harness.
+- Electrical net membership is not physical or explicit splice topology.
 - Normal wires are resolver-generated, then persistent objects.
 - Resolver/reconciliation never destructively rebuilds persistent wires/splices.
+- Ambiguous topology changes become `NEEDS_REVIEW`; never guess a replacement topology.
 - Property inheritance is field-wise: `INHERIT`, `EXPLICIT(value)`, `EXPLICIT(null)`.
 - Viewer may change only layout/selection, never electrical connectivity.
-- Bulk edits are atomic transactions; undo/redo history is capped at 30 actions.
+- Bulk edits and splice operations are atomic transactions; undo/redo history is capped at 30 actions.
 - UI code must not own resolver, inheritance, DRC, or persistence semantics.
 
 ## Target architecture
@@ -35,7 +35,7 @@ Tauri
    └─ later DRC/library resolvers
 ```
 
-## M0.1 implemented
+## M0.1 merged baseline
 ### Project / persistence
 - create/load blank or demo project
 - native Tauri Save dialog and JSON project persistence
@@ -70,61 +70,40 @@ Tauri
 - Smooth and custom 90° wire rendering modes
 - wire ID/gauge/color labels kept near connector endpoints rather than wire centers
 - custom orthogonal breakout/corridor routing with per-wire connector-local lanes at pin-pitch spacing
-- same connector-pair routes may cross at 90° but do not intentionally share longitudinal segments
 
-## Automated verification
-Current M0.1 regression suite contains 8 core tests covering:
-- field-wise inheritance including explicit null
-- persistent wire identity across disconnect/reconnect
-- net assignment preservation on newly added connectors
-- 30-step undo/redo cap
-- failed transaction atomicity
-- bulk pin edit as one undo step
-- JSON round-trip of IDs/wires/viewer rotation
-- backward-compatible loading of schema-v1 projects predating connector rotations
+## M0.2 implementation target
+Implement on top of the M0.1 resolver rather than replacing it:
+- explicit persistent `SpliceInstance` topology
+- connector-near and free splices
+- pin↔splice and splice↔splice desired wire segments
+- multiple splices on one net
+- non-destructive wire/splice reconciliation with `ACTIVE`, `BROKEN`, `DANGLING`, `ORPHANED`, `NEEDS_REVIEW`
+- stable wire/splice IDs where topology matching is unique
+- no inferred topology for ambiguous multi-point nets
+- connector-near splice child rows in the editor
+- splice nodes and splice-connected wires in the electrical viewer
+- free-splice viewer positions persisted in `ViewerLayout`
+- save/reload + atomic undo/redo coverage
 
-CI verifies:
+## M0.2 verification target
+Regression coverage must include:
+- M0.1 pin-pin identity remains stable
+- pin-splice-pin produces two persistent wire segments
+- disconnect/reconnect preserves IDs where unique
+- missing pins/endpoints produce lifecycle/review state rather than deletion
+- multiple splices on one net
+- splice-splice segments
+- ambiguous multi-point changes use `NEEDS_REVIEW`
+- save/reload preserves splices, wires and splice layout
+- one splice creation is one undo/redo transaction
+- all existing M0.1 tests remain green
+
+CI remains:
 - `npm ci`
 - `npm test`
 - TypeScript + Vite production build
-- complete Tauri release build (`--no-bundle`) on Linux
-- complete Tauri release build on Windows
-
-CI must be checked against the exact final PR head before merge.
-
-## Manual M0.1 acceptance status
-Confirmed during desktop testing:
-- pin/net editing works
-- 2-pin net creates/displays a persistent wire
-- disconnect/reconnect preserves wire identity
-- connector navigation and net highlighting work
-- connector drag/halo and viewer layout work
-- native Save/Open works and project data reloads
-- rectangular WireMaster↔WireMaster copy/paste works
-- Excel/Calc rectangular paste no longer tiles/repeats
-- one Ctrl+Z removes a bulk paste and Ctrl+Y restores it
-- direct typing starts cell editing
-- Smooth/90° switching works
-- connector rotation and compact rotated presentation work
-- editor selection remains readable
-
-Final local visual check before merge: rotated Top/Bottom endpoint wire labels must sit beside, not on top of, the vertical wire stub.
-
-## M0.2 target
-Start from merged `main` on a fresh branch, recommended name:
-`m0.2-splices-reconciliation`
-
-Scope:
-- explicit `SpliceInstance` topology
-- connector-near and free splices
-- pin↔splice and splice↔splice wire endpoints
-- persistent splice/wire identities under topology edits
-- non-destructive reconciliation and review statuses
-- connector-near splice child rows in the editor
-- logical viewer representation for splices and their wires
-- focused regression tests for identity preservation and ambiguous edits
-
-Do not pull M0.3 library/contact work into M0.2 unless required by a hard model dependency.
+- Tauri release build (`--no-bundle`) on Linux
+- Tauri release build on Windows
 
 ## Later stages
 ```text
