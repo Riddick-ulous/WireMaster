@@ -25,8 +25,8 @@ const LANE_STEP = 28;
 const OUTSIDE_MARGIN = 84;
 const MAX_AXIS_LANES = 12;
 const SMALL_BEAM_LIMIT = 40;
-const BEAM_WIDTH = 6;
-const CANDIDATES_PER_BEAM_STATE = 4;
+const BEAM_WIDTH = 8;
+const CANDIDATES_PER_BEAM_STATE = 6;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -99,6 +99,39 @@ function axisLanes(axis: 'x' | 'y', source: RoutePoint, target: RoutePoint, obst
 }
 
 function routeKey(points: RoutePoint[]): string { return points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join('|') }
+function handlePairKey(candidate: PlannedCandidate): string { return `${candidate.route.sourceHandleId}>${candidate.route.targetHandleId}` }
+
+function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number): PlannedCandidate[] {
+  const sorted = candidates.slice().sort((left, right) => compareCandidateMetric(left.metric, right.metric) || routeKey(left.route.points).localeCompare(routeKey(right.route.points)));
+  if (sorted.length <= limit) return sorted;
+
+  const selected: PlannedCandidate[] = [];
+  const selectedRoutes = new Set<string>();
+  const usedHandlePairs = new Set<string>();
+
+  // First preserve the best route for as many distinct source/target port pairs
+  // as the beam budget permits. This is important for splice fan-out: otherwise
+  // several near-identical routes through one cheap port can crowd every other
+  // port out before later wires get a chance to use them.
+  for (const candidate of sorted) {
+    const pair = handlePairKey(candidate);
+    if (usedHandlePairs.has(pair)) continue;
+    selected.push(candidate);
+    usedHandlePairs.add(pair);
+    selectedRoutes.add(routeKey(candidate.route.points));
+    if (selected.length >= limit) return selected;
+  }
+
+  // Fill any remaining budget with the globally best geometric alternatives.
+  for (const candidate of sorted) {
+    const key = routeKey(candidate.route.points);
+    if (selectedRoutes.has(key)) continue;
+    selected.push(candidate);
+    selectedRoutes.add(key);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
 
 function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacles: RouteObstacle[], limit: number): PlannedCandidate[] {
   const candidates: PlannedCandidate[] = [];
@@ -122,7 +155,7 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
       const verticalDirect = Math.abs(source.point.x - target.point.x) < 0.25 && (source.side === 'top' || source.side === 'bottom') && (target.side === 'top' || target.side === 'bottom');
       if (horizontalDirect || verticalDirect) {
         const direct = buildCandidate(request, source, target, [source.point, target.point], obstacles, reserved);
-        if (direct && direct.metric.crossings === 0 && direct.metric.churn === 0) return [direct];
+        if (direct && direct.metric.crossings === 0 && direct.metric.churn === 0 && request.source.options.length === 1 && request.target.options.length === 1) return [direct];
         if (direct) candidates.push(direct);
       }
 
@@ -142,9 +175,7 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
     }
   }
 
-  return candidates
-    .sort((left, right) => compareCandidateMetric(left.metric, right.metric) || routeKey(left.route.points).localeCompare(routeKey(right.route.points)))
-    .slice(0, limit);
+  return selectDiverseCandidates(candidates, limit);
 }
 
 function center(terminal: RouteTerminal): RoutePoint {
@@ -217,8 +248,10 @@ export function planOrthogonalRoutesV2(requests: RouteRequest[], obstacles: Rout
     if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
   }
   if (requests.length <= SMALL_BEAM_LIMIT) {
-    const planned = beamPlan(variants[0], obstacles);
-    if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
+    for (const order of variants.slice(0, 2)) {
+      const planned = beamPlan(order, obstacles);
+      if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
+    }
   }
   return best?.routes ?? new Map();
 }
