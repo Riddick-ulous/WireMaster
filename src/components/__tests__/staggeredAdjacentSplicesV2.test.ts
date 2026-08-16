@@ -36,9 +36,11 @@ describe('staggered adjacent connector-near splices', () => {
       { id: 'W10', source: terminal('C4', 'C4-p4', 'top', 580, 700), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
     ];
     const expanded = expandSpliceFanInRouting(requests, obstacles);
-    console.info('[assignment]', JSON.stringify(expanded.requests.map((request) => ({ id: request.id, target: request.target.options[0] }))));
     const results = planOrthogonalRoutesV2(requests, obstacles);
-    console.info('[results]', JSON.stringify(requests.map((request) => ({ id: request.id, result: results.get(request.id) }))));
-    expect(results.size).toBe(6);
+    const diagnostic = JSON.stringify({
+      assignment: expanded.requests.map((request) => ({ id: request.id, target: request.target.options[0] })),
+      results: requests.map((request) => ({ id: request.id, result: results.get(request.id) })),
+    });
+    expect(diagnostic, diagnostic).toBe('diagnostic-output');
   });
 });
