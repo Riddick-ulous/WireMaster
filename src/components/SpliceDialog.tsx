@@ -55,13 +55,22 @@ function otherEndpoint(wire: WireInstance, endpoint: WireEndpoint): WireEndpoint
 
 export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, onPreview }: Props) {
   const harness = project.subHarnesses.find((item) => item.id === harnessId)!;
-  const editingSplice = intent.kind === 'EDIT'
-    ? harness.splices.find((splice) => splice.id === intent.spliceId && splice.status !== 'ORPHANED') ?? null
-    : null;
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [splitWireId, setSplitWireId] = useState<UUID | null>(null);
+  const [dialogPosition, setDialogPosition] = useState({ x: 28, y: 82 });
+  const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const publishedPreviewKey = useRef<string | null>(null);
 
-  const initialPin = intent.kind === 'CREATE_CONNECTOR'
-    ? harness.connectors.flatMap((connector) => connector.pins.map((pin) => ({ connector, pin }))).find((item) => item.pin.id === intent.pinId) ?? null
-    : null;
+  const editingSplice = useMemo(() => intent.kind === 'EDIT'
+    ? harness.splices.find((splice) => splice.id === intent.spliceId && splice.status !== 'ORPHANED') ?? null
+    : null, [harness.splices, intent]);
+
+  const initialPin = useMemo(() => intent.kind === 'CREATE_CONNECTOR'
+    ? harness.connectors
+      .flatMap((connector) => connector.pins.map((pin) => ({ connector, pin })))
+      .find((item) => item.pin.id === intent.pinId) ?? null
+    : null, [harness.connectors, intent]);
+
   const intendedInitialNetId = intent.kind === 'CREATE_FREE'
     ? intent.initialNetId ?? null
     : intent.kind === 'CREATE_CONNECTOR'
@@ -72,13 +81,14 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
     net.id,
     harness.connectors.reduce((count, connector) => count + connector.pins.filter((pin) => pin.netId === net.id).length, 0),
   ])), [harness.connectors, project.nets]);
+
   const firstUsefulNet = project.nets.find((net) => (netCounts.get(net.id) ?? 0) >= 2)?.id ?? project.nets[0]?.id ?? '';
-  const [netId, setNetId] = useState<UUID>(intendedInitialNetId && project.nets.some((net) => net.id === intendedInitialNetId) ? intendedInitialNetId : firstUsefulNet);
+  const [netId, setNetId] = useState<UUID>(
+    intendedInitialNetId && project.nets.some((net) => net.id === intendedInitialNetId)
+      ? intendedInitialNetId
+      : firstUsefulNet,
+  );
   const [anchorPinId] = useState<UUID | null>(intent.kind === 'CREATE_CONNECTOR' ? intent.pinId : editingSplice?.anchorPinId ?? null);
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [splitWireId, setSplitWireId] = useState<UUID | null>(null);
-  const [dialogPosition, setDialogPosition] = useState({ x: 28, y: 82 });
-  const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const placement: 'CONNECTOR' | 'FREE' = intent.kind === 'CREATE_FREE'
     ? 'FREE'
@@ -86,35 +96,45 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
       ? 'CONNECTOR'
       : editingSplice?.placement ?? 'FREE';
 
-  const pinRefs = useMemo<PinRef[]>(() => harness.connectors.flatMap((connector) => connector.pins
-    .filter((pin) => pin.netId === netId)
-    .map((pin) => ({
-      connectorId: connector.id,
-      connectorDisplayId: connector.displayId,
-      connectorLabel: connector.label,
-      pinId: pin.id,
-      cavity: pin.cavity,
-      pinName: pin.pinName,
-      endpoint: { kind: 'pin', connectorId: connector.id, pinId: pin.id } as PinEndpoint,
-    })))
+  const pinRefs = useMemo<PinRef[]>(() => harness.connectors
+    .flatMap((connector) => connector.pins
+      .filter((pin) => pin.netId === netId)
+      .map((pin) => ({
+        connectorId: connector.id,
+        connectorDisplayId: connector.displayId,
+        connectorLabel: connector.label,
+        pinId: pin.id,
+        cavity: pin.cavity,
+        pinName: pin.pinName,
+        endpoint: { kind: 'pin', connectorId: connector.id, pinId: pin.id } as PinEndpoint,
+      })))
     .sort((left, right) => left.connectorDisplayId.localeCompare(right.connectorDisplayId, undefined, { numeric: true })
       || cavitySort(left.cavity, right.cavity)), [harness.connectors, netId]);
 
-  const activeSplices = useMemo(() => harness.splices.filter((splice) => splice.netId === netId && splice.status !== 'ORPHANED'), [harness.splices, netId]);
-  const activeWires = useMemo(() => harness.wires.filter((wire) => wire.netId === netId && wire.status === 'ACTIVE'), [harness.wires, netId]);
+  const activeSplices = useMemo(
+    () => harness.splices.filter((splice) => splice.netId === netId && splice.status !== 'ORPHANED'),
+    [harness.splices, netId],
+  );
+  const activeWires = useMemo(
+    () => harness.wires.filter((wire) => wire.netId === netId && wire.status === 'ACTIVE'),
+    [harness.wires, netId],
+  );
   const hasTopology = activeSplices.length > 0;
-  const anchorRef = pinRefs.find((item) => item.pinId === anchorPinId) ?? null;
+
+  const anchorRef = useMemo(() => pinRefs.find((item) => item.pinId === anchorPinId) ?? null, [anchorPinId, pinRefs]);
   const anchorEndpoint = anchorRef?.endpoint ?? null;
-  const anchorWires = anchorEndpoint
-    ? activeWires.filter((wire) => endpointKey(wire.endpointA) === endpointKey(anchorEndpoint) || endpointKey(wire.endpointB) === endpointKey(anchorEndpoint))
-    : [];
+  const anchorWires = useMemo(() => anchorEndpoint
+    ? activeWires.filter((wire) => endpointKey(wire.endpointA) === endpointKey(anchorEndpoint)
+      || endpointKey(wire.endpointB) === endpointKey(anchorEndpoint))
+    : [], [activeWires, anchorEndpoint]);
+
   const connectorInsertWire = intent.kind === 'CREATE_CONNECTOR' && hasTopology && anchorWires.length === 1 ? anchorWires[0] : null;
   const connectorExistingEndpoint = connectorInsertWire && anchorEndpoint ? otherEndpoint(connectorInsertWire, anchorEndpoint) : null;
   const connectorExistingSplice = connectorExistingEndpoint?.kind === 'splice'
     ? activeSplices.find((splice) => splice.id === connectorExistingEndpoint.spliceId) ?? null
     : null;
 
-  const freeSplitCandidates = activeWires.filter((wire) => {
+  const freeSplitCandidates = useMemo(() => activeWires.filter((wire) => {
     const endpoints = [wire.endpointA, wire.endpointB];
     return !endpoints.some((endpoint) => {
       if (endpoint.kind !== 'pin') return false;
@@ -123,15 +143,40 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
       const splice = activeSplices.find((item) => item.id === other.spliceId);
       return splice?.placement === 'CONNECTOR' && splice.anchorPinId === endpoint.pinId;
     });
-  });
-  const selectedSplitWire = freeSplitCandidates.find((wire) => wire.id === splitWireId) ?? freeSplitCandidates[0] ?? null;
+  }), [activeSplices, activeWires]);
+
+  const selectedSplitWire = useMemo(
+    () => freeSplitCandidates.find((wire) => wire.id === splitWireId) ?? freeSplitCandidates[0] ?? null,
+    [freeSplitCandidates, splitWireId],
+  );
+
+  const branchOptions = useMemo(() => connectorExistingSplice
+    ? connectorExistingSplice.memberEndpoints.filter((endpoint) => !anchorEndpoint || endpointKey(endpoint) !== endpointKey(anchorEndpoint))
+    : [], [anchorEndpoint, connectorExistingSplice]);
+
+  const selectedPinEndpoints = useMemo(
+    () => pinRefs.filter((item) => selectedKeys.has(endpointKey(item.endpoint))).map((item) => item.endpoint),
+    [pinRefs, selectedKeys],
+  );
+  const selectedAdditionalBranches = useMemo(
+    () => branchOptions.filter((endpoint) => selectedKeys.has(endpointKey(endpoint))),
+    [branchOptions, selectedKeys],
+  );
+
+  const editingConnectedWires = useMemo(() => editingSplice
+    ? harness.wires.filter((wire) => wire.netId === editingSplice.netId
+      && wire.status !== 'ORPHANED'
+      && ((wire.endpointA.kind === 'splice' && wire.endpointA.spliceId === editingSplice.id)
+        || (wire.endpointB.kind === 'splice' && wire.endpointB.spliceId === editingSplice.id)))
+    : [], [editingSplice, harness.wires]);
 
   const endpointLabel = (endpoint: WireEndpoint): string => {
     if (endpoint.kind === 'splice') {
       const splice = harness.splices.find((item) => item.id === endpoint.spliceId);
       if (!splice) return `Unknown splice ${endpoint.spliceId}`;
       if (splice.placement === 'CONNECTOR' && splice.anchorPinId) {
-        const pinRef = harness.connectors.flatMap((connector) => connector.pins.map((pin) => ({ connector, pin })))
+        const pinRef = harness.connectors
+          .flatMap((connector) => connector.pins.map((pin) => ({ connector, pin })))
           .find((item) => item.pin.id === splice.anchorPinId);
         return `${splice.displayId} · at ${pinRef?.connector.displayId ?? '?'} · ${pinRef?.connector.label ?? 'Unknown connector'} · cavity ${pinRef?.pin.cavity ?? '?'}`;
       }
@@ -144,10 +189,6 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
 
   const wireLabel = (wire: WireInstance): string => `${wire.displayId} · ${endpointLabel(wire.endpointA)} ↔ ${endpointLabel(wire.endpointB)}`;
 
-  const branchOptions = connectorExistingSplice
-    ? connectorExistingSplice.memberEndpoints.filter((endpoint) => !anchorEndpoint || endpointKey(endpoint) !== endpointKey(anchorEndpoint))
-    : [];
-
   const wireForBranch = (splice: SpliceInstance, endpoint: WireEndpoint): WireInstance | undefined => {
     const spliceEnd: WireEndpoint = { kind: 'splice', spliceId: splice.id };
     return harness.wires.find((wire) => wire.netId === splice.netId
@@ -156,19 +197,12 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
         || (endpointKey(wire.endpointB) === endpointKey(spliceEnd) && endpointKey(wire.endpointA) === endpointKey(endpoint))));
   };
 
-  const editingConnectedWires = editingSplice
-    ? harness.wires.filter((wire) => wire.netId === editingSplice.netId
-      && wire.status !== 'ORPHANED'
-      && ((wire.endpointA.kind === 'splice' && wire.endpointA.spliceId === editingSplice.id)
-        || (wire.endpointB.kind === 'splice' && wire.endpointB.spliceId === editingSplice.id)))
-    : [];
-
   useEffect(() => {
     if (intent.kind === 'EDIT' && editingSplice) {
       setSelectedKeys(new Set(editingSplice.memberEndpoints.filter((endpoint) => endpoint.kind === 'pin').map(endpointKey)));
       return;
     }
-    if ((intent.kind === 'CREATE_CONNECTOR' || intent.kind === 'CREATE_FREE') && !hasTopology) {
+    if (!hasTopology) {
       setSelectedKeys(new Set(pinRefs.map((item) => endpointKey(item.endpoint))));
       return;
     }
@@ -176,7 +210,8 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
   }, [editingSplice, hasTopology, intent.kind, netId, pinRefs]);
 
   useEffect(() => {
-    if (intent.kind === 'CREATE_FREE' && hasTopology) setSplitWireId(freeSplitCandidates[0]?.id ?? null);
+    if (intent.kind !== 'CREATE_FREE' || !hasTopology) return;
+    setSplitWireId((current) => freeSplitCandidates.some((wire) => wire.id === current) ? current : freeSplitCandidates[0]?.id ?? null);
   }, [freeSplitCandidates, hasTopology, intent.kind, netId]);
 
   useEffect(() => {
@@ -208,34 +243,27 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
     });
   };
 
-  const firstSelectedPins = pinRefs.filter((item) => selectedKeys.has(endpointKey(item.endpoint))).map((item) => item.endpoint);
-  const editingSelectedPins = pinRefs.filter((item) => selectedKeys.has(endpointKey(item.endpoint))).map((item) => item.endpoint);
-  const selectedAdditionalBranches = branchOptions.filter((endpoint) => selectedKeys.has(endpointKey(endpoint)));
-
-  const problem = (() => {
+  const problem = useMemo(() => {
     if (!netId) return 'Select a net.';
     if (intent.kind === 'EDIT') return editingSplice ? null : 'The splice no longer exists.';
     if (intent.kind === 'CREATE_FREE') {
-      if (!hasTopology) return firstSelectedPins.length >= 2 ? null : 'Select at least two connector pins for the free splice.';
+      if (!hasTopology) return selectedPinEndpoints.length >= 2 ? null : 'Select at least two connector pins for the free splice.';
       return selectedSplitWire ? null : 'Select an active wire in which the free splice should be inserted.';
     }
     if (!anchorRef) return 'The selected connector pin is not on this net.';
-    if (!hasTopology) return firstSelectedPins.filter((endpoint) => endpoint.pinId !== anchorRef.pinId).length >= 1
+    if (!hasTopology) return selectedPinEndpoints.filter((endpoint) => endpoint.pinId !== anchorRef.pinId).length >= 1
       ? null
       : 'Select at least one other connector pin for this splice.';
     if (anchorWires.length !== 1) return `The selected pin must have exactly one active wire; it currently has ${anchorWires.length}.`;
     if (!connectorExistingSplice || !connectorInsertWire) return 'The active wire at this pin is not connected to an existing splice.';
     return null;
-  })();
+  }, [anchorRef, anchorWires.length, connectorExistingSplice, connectorInsertWire, editingSplice, hasTopology, intent.kind, netId, selectedPinEndpoints, selectedSplitWire]);
 
-  useEffect(() => {
-    if (problem) {
-      onPreview(null);
-      return;
-    }
+  const preview = useMemo<SplicePreview | null>(() => {
+    if (problem) return null;
     if (intent.kind === 'EDIT' && editingSplice) {
       const fixedSpliceLinks = editingSplice.memberEndpoints.filter((endpoint) => endpoint.kind === 'splice');
-      onPreview({
+      return {
         netId: editingSplice.netId,
         placement: editingSplice.placement,
         spliceId: editingSplice.id,
@@ -243,40 +271,45 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
         endpoints: [
           ...(editingSplice.anchorPinId && anchorRef ? [anchorRef.endpoint] : []),
           ...fixedSpliceLinks,
-          ...editingSelectedPins,
+          ...selectedPinEndpoints,
         ],
-      });
-      return;
+      };
     }
     if (intent.kind === 'CREATE_FREE') {
-      onPreview({
+      return {
         netId,
         placement: 'FREE',
         anchorPinId: null,
-        endpoints: hasTopology && selectedSplitWire ? [selectedSplitWire.endpointA, selectedSplitWire.endpointB] : firstSelectedPins,
+        endpoints: hasTopology && selectedSplitWire
+          ? [selectedSplitWire.endpointA, selectedSplitWire.endpointB]
+          : selectedPinEndpoints,
         splitWireId: selectedSplitWire?.id ?? null,
-      });
-      return;
+      };
     }
-    if (anchorRef) {
-      onPreview({
-        netId,
-        placement: 'CONNECTOR',
-        anchorPinId: anchorRef.pinId,
-        endpoints: hasTopology && connectorExistingSplice
-          ? [anchorRef.endpoint, { kind: 'splice', spliceId: connectorExistingSplice.id }, ...selectedAdditionalBranches]
-          : [anchorRef.endpoint, ...firstSelectedPins.filter((endpoint) => endpoint.pinId !== anchorRef.pinId)],
-        splitWireId: connectorInsertWire?.id ?? null,
-      });
-    }
-  }, [anchorRef, connectorExistingSplice, connectorInsertWire?.id, editingSelectedPins, editingSplice, firstSelectedPins, hasTopology, intent.kind, netId, onPreview, problem, selectedAdditionalBranches, selectedSplitWire]);
+    if (!anchorRef) return null;
+    return {
+      netId,
+      placement: 'CONNECTOR',
+      anchorPinId: anchorRef.pinId,
+      endpoints: hasTopology && connectorExistingSplice
+        ? [anchorRef.endpoint, { kind: 'splice', spliceId: connectorExistingSplice.id }, ...selectedAdditionalBranches]
+        : [anchorRef.endpoint, ...selectedPinEndpoints.filter((endpoint) => endpoint.pinId !== anchorRef.pinId)],
+      splitWireId: connectorInsertWire?.id ?? null,
+    };
+  }, [anchorRef, connectorExistingSplice, connectorInsertWire?.id, editingSplice, hasTopology, intent.kind, netId, problem, selectedAdditionalBranches, selectedPinEndpoints, selectedSplitWire]);
 
+  const previewKey = useMemo(() => preview ? JSON.stringify(preview) : 'null', [preview]);
+  useEffect(() => {
+    if (publishedPreviewKey.current === previewKey) return;
+    publishedPreviewKey.current = previewKey;
+    onPreview(preview);
+  }, [onPreview, preview, previewKey]);
   useEffect(() => () => onPreview(null), [onPreview]);
 
   const submit = () => {
     if (problem) return;
     if (intent.kind === 'EDIT' && editingSplice) {
-      onSubmit({ mode: 'EDIT', spliceId: editingSplice.id, pinEndpoints: editingSelectedPins });
+      onSubmit({ mode: 'EDIT', spliceId: editingSplice.id, pinEndpoints: selectedPinEndpoints });
       return;
     }
     if (intent.kind === 'CREATE_FREE') {
@@ -284,16 +317,27 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
         if (!selectedSplitWire) return;
         onSubmit({ mode: 'INSERT_FREE', netId, wireId: selectedSplitWire.id });
       } else {
-        onSubmit({ mode: 'CREATE_FIRST_FREE', netId, memberEndpoints: firstSelectedPins });
+        onSubmit({ mode: 'CREATE_FIRST_FREE', netId, memberEndpoints: selectedPinEndpoints });
       }
       return;
     }
     if (!anchorRef) return;
     if (hasTopology) {
       if (!connectorExistingSplice) return;
-      onSubmit({ mode: 'INSERT_CONNECTOR', netId, existingSpliceId: connectorExistingSplice.id, anchorPinId: anchorRef.pinId, branchesToMove: selectedAdditionalBranches });
+      onSubmit({
+        mode: 'INSERT_CONNECTOR',
+        netId,
+        existingSpliceId: connectorExistingSplice.id,
+        anchorPinId: anchorRef.pinId,
+        branchesToMove: selectedAdditionalBranches,
+      });
     } else {
-      onSubmit({ mode: 'CREATE_FIRST_CONNECTOR', netId, anchorPinId: anchorRef.pinId, memberEndpoints: firstSelectedPins.filter((endpoint) => endpoint.pinId !== anchorRef.pinId) });
+      onSubmit({
+        mode: 'CREATE_FIRST_CONNECTOR',
+        netId,
+        anchorPinId: anchorRef.pinId,
+        memberEndpoints: selectedPinEndpoints.filter((endpoint) => endpoint.pinId !== anchorRef.pinId),
+      });
     }
   };
 
@@ -304,7 +348,13 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
       : hasTopology ? 'Insert connector-near splice' : 'Create connector-near splice';
 
   return (
-    <div className="splice-dialog floating" style={{ left: dialogPosition.x, top: dialogPosition.y }} role="dialog" aria-modal="false" aria-labelledby="splice-dialog-title">
+    <div
+      className="splice-dialog floating"
+      style={{ left: dialogPosition.x, top: dialogPosition.y }}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="splice-dialog-title"
+    >
       <div
         className="splice-dialog-header draggable"
         onMouseDown={(event) => {
@@ -315,7 +365,9 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
       >
         <div>
           <strong id="splice-dialog-title">{title}</strong>
-          <span>{intent.kind === 'EDIT' ? 'Edit which connector wires terminate at this splice.' : 'The dashed ghost in the Electrical Viewer shows the proposed wiring live.'}</span>
+          <span>{intent.kind === 'EDIT'
+            ? 'Edit which connector wires terminate at this splice.'
+            : 'The dashed ghost in the Electrical Viewer shows the proposed wiring live.'}</span>
         </div>
         <button type="button" onClick={onCancel} aria-label="Close splice dialog">×</button>
       </div>
@@ -324,75 +376,160 @@ export function SpliceDialog({ project, harnessId, intent, onCancel, onSubmit, o
         <label className="dialog-field">
           <span>Net</span>
           <select value={netId} disabled={intent.kind !== 'CREATE_FREE'} onChange={(event) => setNetId(event.target.value)}>
-            {project.nets.map((item) => <option key={item.id} value={item.id}>{item.name} · {netCounts.get(item.id) ?? 0} pins</option>)}
+            {project.nets.map((item) => (
+              <option key={item.id} value={item.id}>{item.name} · {netCounts.get(item.id) ?? 0} pins</option>
+            ))}
           </select>
         </label>
 
         {intent.kind === 'CREATE_CONNECTOR' && anchorRef && (
-          <div className="dialog-summary"><span>Splice location</span><strong>{endpointLabel(anchorRef.endpoint)}</strong><small>The splice physically sits at this connector pin.</small></div>
+          <div className="dialog-summary">
+            <span>Splice location</span>
+            <strong>{endpointLabel(anchorRef.endpoint)}</strong>
+            <small>The splice physically sits at this connector pin.</small>
+          </div>
         )}
 
         {intent.kind === 'EDIT' && editingSplice && (
           <>
-            <div className="dialog-summary"><span>Placement</span><strong>{editingSplice.placement === 'FREE' ? 'Free splice' : editingSplice.anchorPinId && anchorRef ? endpointLabel(anchorRef.endpoint) : 'Connector-near'}</strong><small>{editingSplice.status}</small></div>
-            <div className="dialog-field"><span>Current wires on {editingSplice.displayId}</span><div className="wire-list read-only">
-              {editingConnectedWires.map((wire) => <div className="wire-option" key={wire.id}><strong>{wire.displayId}</strong><span>{wireLabel(wire)}</span><em>{wire.status}</em></div>)}
-              {!editingConnectedWires.length && <div className="branch-empty">No materialized wires currently terminate here.</div>}
-            </div></div>
+            <div className="dialog-summary">
+              <span>Placement</span>
+              <strong>{editingSplice.placement === 'FREE'
+                ? 'Free splice'
+                : editingSplice.anchorPinId && anchorRef ? endpointLabel(anchorRef.endpoint) : 'Connector-near'}</strong>
+              <small>{editingSplice.status}</small>
+            </div>
+            <div className="dialog-field">
+              <span>Current wires on {editingSplice.displayId}</span>
+              <div className="wire-list read-only">
+                {editingConnectedWires.map((wire) => (
+                  <div className="wire-option" key={wire.id}>
+                    <strong>{wire.displayId}</strong>
+                    <span>{wireLabel(wire)}</span>
+                    <em>{wire.status}</em>
+                  </div>
+                ))}
+                {!editingConnectedWires.length && <div className="branch-empty">No materialized wires currently terminate here.</div>}
+              </div>
+            </div>
           </>
         )}
 
         {intent.kind === 'CREATE_FREE' && hasTopology && (
-          <label className="dialog-field"><span>Wire being split</span><select value={selectedSplitWire?.id ?? ''} onChange={(event) => setSplitWireId(event.target.value || null)}>
-            {freeSplitCandidates.map((wire) => <option key={wire.id} value={wire.id}>{wireLabel(wire)}</option>)}
-          </select><small>The existing wire keeps one segment; one new wire segment is created through the free splice.</small></label>
+          <label className="dialog-field">
+            <span>Wire being split</span>
+            <select value={selectedSplitWire?.id ?? ''} onChange={(event) => setSplitWireId(event.target.value || null)}>
+              {freeSplitCandidates.map((wire) => <option key={wire.id} value={wire.id}>{wireLabel(wire)}</option>)}
+            </select>
+            <small>The selected existing wire is the physical wire in which this free splice will be inserted.</small>
+          </label>
         )}
 
         {intent.kind === 'CREATE_CONNECTOR' && hasTopology && connectorInsertWire && connectorExistingSplice && (
           <>
-            <div className="dialog-summary important"><span>Wire being split</span><strong>{wireLabel(connectorInsertWire)}</strong><small>The new splice is inserted into this exact wire.</small></div>
-            <div className="dialog-field branch-field"><span>Additional wires to move to the new splice</span><small>The location wire above always moves. Check another wire only if it should terminate at the new splice too.</small><div className="wire-list">
-              {branchOptions.map((endpoint) => {
-                const key = endpointKey(endpoint);
-                const wire = wireForBranch(connectorExistingSplice, endpoint);
-                return <label className="wire-option selectable" key={key}><input type="checkbox" checked={selectedKeys.has(key)} onChange={(event) => toggleKey(key, event.target.checked)} /><span>{wire ? wireLabel(wire) : `${connectorExistingSplice.displayId} ↔ ${endpointLabel(endpoint)}`}</span></label>;
-              })}
-              {!branchOptions.length && <div className="branch-empty">No other wires terminate at {connectorExistingSplice.displayId}.</div>}
-            </div></div>
+            <div className="dialog-summary important">
+              <span>Wire being split</span>
+              <strong>{wireLabel(connectorInsertWire)}</strong>
+              <small>The new splice is inserted into this exact wire.</small>
+            </div>
+            <div className="dialog-field branch-field">
+              <span>Additional wires to move to the new splice</span>
+              <small>The location wire above always moves. Check another wire only if it should terminate at the new splice too.</small>
+              <div className="wire-list">
+                {branchOptions.map((endpoint) => {
+                  const key = endpointKey(endpoint);
+                  const wire = wireForBranch(connectorExistingSplice, endpoint);
+                  return (
+                    <label className="wire-option selectable" key={key}>
+                      <input type="checkbox" checked={selectedKeys.has(key)} onChange={(event) => toggleKey(key, event.target.checked)} />
+                      <span>{wire ? wireLabel(wire) : `${connectorExistingSplice.displayId} ↔ ${endpointLabel(endpoint)}`}</span>
+                    </label>
+                  );
+                })}
+                {!branchOptions.length && <div className="branch-empty">No other wires terminate at {connectorExistingSplice.displayId}.</div>}
+              </div>
+            </div>
           </>
         )}
 
         {((intent.kind === 'CREATE_FREE' && !hasTopology) || (intent.kind === 'CREATE_CONNECTOR' && !hasTopology)) && (
-          <div className="dialog-field branch-field"><span>Connector wires on this splice</span><small>These are the actual connector-pin wires that will terminate at the new splice.</small><div className="wire-list">
-            {pinRefs.map((item) => {
-              const key = endpointKey(item.endpoint);
-              const isAnchor = intent.kind === 'CREATE_CONNECTOR' && item.pinId === anchorPinId;
-              return <label className="wire-option selectable" key={key}><input type="checkbox" checked={isAnchor || selectedKeys.has(key)} disabled={isAnchor} onChange={(event) => toggleKey(key, event.target.checked)} /><span>{endpointLabel(item.endpoint)}</span>{isAnchor && <em>splice location</em>}</label>;
-            })}
-          </div></div>
+          <div className="dialog-field branch-field">
+            <span>Connector wires on this splice</span>
+            <small>Each checked row is a real connector-pin wire that will terminate at the new splice.</small>
+            <div className="wire-list">
+              {pinRefs.map((item) => {
+                const key = endpointKey(item.endpoint);
+                const isAnchor = intent.kind === 'CREATE_CONNECTOR' && item.pinId === anchorPinId;
+                return (
+                  <label className="wire-option selectable" key={key}>
+                    <input
+                      type="checkbox"
+                      checked={isAnchor || selectedKeys.has(key)}
+                      disabled={isAnchor}
+                      onChange={(event) => toggleKey(key, event.target.checked)}
+                    />
+                    <span>{endpointLabel(item.endpoint)}</span>
+                    {isAnchor && <em>splice location</em>}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {intent.kind === 'EDIT' && editingSplice && (
-          <div className="dialog-field branch-field"><span>Connector wires assigned to {editingSplice.displayId}</span><small>Checking a pin moves that connector wire to this splice. Pins that physically host another connector-near splice cannot be moved.</small><div className="wire-list">
-            {pinRefs.map((item) => {
-              const key = endpointKey(item.endpoint);
-              const isOwnAnchor = editingSplice.anchorPinId === item.pinId;
-              const anchoredByOther = activeSplices.find((splice) => splice.id !== editingSplice.id && splice.anchorPinId === item.pinId);
-              const ownedByOther = activeSplices.find((splice) => splice.id !== editingSplice.id && splice.memberEndpoints.some((endpoint) => endpoint.kind === 'pin' && endpoint.pinId === item.pinId));
-              const existingWire = ownedByOther ? wireForBranch(ownedByOther, item.endpoint) : undefined;
-              return <label className={`wire-option selectable ${anchoredByOther ? 'disabled' : ''}`} key={key}><input type="checkbox" checked={isOwnAnchor || selectedKeys.has(key)} disabled={isOwnAnchor || Boolean(anchoredByOther)} onChange={(event) => toggleKey(key, event.target.checked)} /><span>{endpointLabel(item.endpoint)}</span>{isOwnAnchor && <em>splice location</em>}{anchoredByOther && <em>location of {anchoredByOther.displayId}</em>}{!anchoredByOther && ownedByOther && <em>{existingWire?.displayId ?? 'wire'} currently on {ownedByOther.displayId} · selecting moves it</em>}</label>;
-            })}
-          </div></div>
+          <div className="dialog-field branch-field">
+            <span>Connector wires assigned to {editingSplice.displayId}</span>
+            <small>Check a connector pin to move that wire to this splice. A pin that physically hosts another connector-near splice cannot be moved.</small>
+            <div className="wire-list">
+              {pinRefs.map((item) => {
+                const key = endpointKey(item.endpoint);
+                const isOwnAnchor = editingSplice.anchorPinId === item.pinId;
+                const anchoredByOther = activeSplices.find((splice) => splice.id !== editingSplice.id && splice.anchorPinId === item.pinId);
+                const ownedByOther = activeSplices.find((splice) => splice.id !== editingSplice.id
+                  && splice.memberEndpoints.some((endpoint) => endpoint.kind === 'pin' && endpoint.pinId === item.pinId));
+                const existingWire = ownedByOther ? wireForBranch(ownedByOther, item.endpoint) : undefined;
+                return (
+                  <label className={`wire-option selectable ${anchoredByOther ? 'disabled' : ''}`} key={key}>
+                    <input
+                      type="checkbox"
+                      checked={isOwnAnchor || selectedKeys.has(key)}
+                      disabled={isOwnAnchor || Boolean(anchoredByOther)}
+                      onChange={(event) => toggleKey(key, event.target.checked)}
+                    />
+                    <span>{endpointLabel(item.endpoint)}</span>
+                    {isOwnAnchor && <em>splice location</em>}
+                    {anchoredByOther && <em>location of {anchoredByOther.displayId}</em>}
+                    {!anchoredByOther && ownedByOther && <em>{existingWire?.displayId ?? 'wire'} currently on {ownedByOther.displayId} · selecting moves it</em>}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {problem && <div className="dialog-warning">{problem}</div>}
       </div>
 
       <div className="splice-dialog-footer">
-        {intent.kind === 'EDIT' && editingSplice && <button type="button" className="danger" onClick={() => { if (window.confirm(`Remove ${editingSplice.displayId}? Its historical wires remain in the project but will no longer be active topology.`)) onSubmit({ mode: 'DELETE', spliceId: editingSplice.id }); }}>Remove splice</button>}
+        {intent.kind === 'EDIT' && editingSplice && (
+          <button
+            type="button"
+            className="danger"
+            onClick={() => {
+              if (window.confirm(`Remove ${editingSplice.displayId}? Its historical wires remain in the project but will no longer be active topology.`)) {
+                onSubmit({ mode: 'DELETE', spliceId: editingSplice.id });
+              }
+            }}
+          >
+            Remove splice
+          </button>
+        )}
         <span className="footer-spacer" />
         <button type="button" onClick={onCancel}>Cancel</button>
-        <button type="button" className="primary" disabled={Boolean(problem)} onClick={submit}>{intent.kind === 'EDIT' ? 'Apply' : 'Create splice'}</button>
+        <button type="button" className="primary" disabled={Boolean(problem)} onClick={submit}>
+          {intent.kind === 'EDIT' ? 'Apply' : 'Create splice'}
+        </button>
       </div>
     </div>
   );
