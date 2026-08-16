@@ -97,10 +97,25 @@ describe('transactions', () => {
 });
 
 describe('persistence', () => {
-  it('round-trips IDs and wires through JSON', () => {
+  it('round-trips IDs, wires and viewer rotation through JSON', () => {
     const project = createDemoProject();
+    const harness = project.subHarnesses[0];
+    const connectorId = harness.connectors[0].id;
+    harness.viewerLayout.connectorRotations[connectorId] = 90;
+
     const loaded = deserializeProject(serializeProject(project));
     expect(loaded.id).toBe(project.id);
     expect(wireIds(loaded)).toEqual(wireIds(project));
+    expect(loaded.subHarnesses[0].viewerLayout.connectorRotations[connectorId]).toBe(90);
+  });
+
+  it('loads schema-v1 projects saved before connector rotations existed', () => {
+    const project = createDemoProject();
+    const raw = JSON.parse(serializeProject(project)) as Record<string, unknown>;
+    const subHarnesses = raw.subHarnesses as Array<{ viewerLayout: Record<string, unknown> }>;
+    delete subHarnesses[0].viewerLayout.connectorRotations;
+
+    const loaded = deserializeProject(JSON.stringify(raw));
+    expect(loaded.subHarnesses[0].viewerLayout.connectorRotations).toEqual({});
   });
 });
