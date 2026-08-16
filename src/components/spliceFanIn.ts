@@ -137,7 +137,11 @@ export function buildSpliceFanInGeometry(
   if (!needsEnvelope) return null;
   const availableSides = SIDES.filter((side) => side !== blockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
-  const portsPerSide = basePerSide + (blockedSide ? 1 : 0);
+  // Keep the common 4-wire connector-near case compact: three external
+  // branches need exactly one landing on right/top/bottom. Extra ports are
+  // added only for genuinely dense connector-near junctions; otherwise their
+  // envelopes would overlap adjacent one-grid-staggered splice zones.
+  const portsPerSide = basePerSide + (blockedSide && branchCount > availableSides.length * 2 ? 1 : 0);
   const size = Math.max(
     SPLICE_FANIN_MIN_LENGTH,
     2 * SPLICE_FANIN_PADDING + Math.max(0, portsPerSide - 1) * SPLICE_PORT_PITCH,
