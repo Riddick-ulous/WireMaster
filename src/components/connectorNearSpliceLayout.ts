@@ -10,12 +10,14 @@ export const SPLICE_SIZE_PX = 12;
 
 /**
  * Connector-near junctions must leave enough room for branches to enter from
- * the two transverse sides. Adjacent anchor cavities therefore alternate
- * between two radial lanes one routing grid apart. The offset is always away
+ * the two transverse sides. Adjacent anchor cavities alternate between two
+ * radial lanes. A junction lane is two 28 px routing grids apart: one grid is
+ * insufficient because two neighbouring 28 px mandatory terminal runs would
+ * intersect before either wire is allowed to bend. The offset is always away
  * from the connector, so the anchor lead stays straight.
  */
 export const CONNECTOR_SPLICE_BASE_GAP_PX = 56;
-export const CONNECTOR_SPLICE_STAGGER_PX = 28;
+export const CONNECTOR_SPLICE_STAGGER_PX = 56;
 
 /**
  * A connector-near splice is a small junction marker inside a controlled local
