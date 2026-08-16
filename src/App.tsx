@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { ConnectorGrid } from './components/ConnectorGrid';
-import { ElectricalViewer } from './components/ElectricalViewer';
+import { ElectricalViewer, type WireRenderStyle } from './components/ElectricalViewer';
 import { addGenericConnector, applyPinEdits, setConnectorLabel, type PinEdit } from './core/project';
 import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
@@ -15,6 +16,8 @@ export default function App() {
   const [activeHarnessId, setActiveHarnessId] = useState(project.subHarnesses[0].id);
   const [selectedConnectorId, setSelectedConnectorId] = useState<UUID | null>(project.subHarnesses[0].connectors[0]?.id ?? null);
   const [highlightedNetId, setHighlightedNetId] = useState<UUID | null>(null);
+  const [wireRenderStyle, setWireRenderStyle] = useState<WireRenderStyle>('smooth');
+  const [lastSavedPath, setLastSavedPath] = useState<string | null>(null);
 
   const publishHistory = useCallback((state: HistoryState<Project>) => {
     setHistoryState({ ...state, present: structuredClone(state.present) });
@@ -56,6 +59,7 @@ export default function App() {
     setActiveHarnessId(next.subHarnesses[0].id);
     setSelectedConnectorId(next.subHarnesses[0].connectors[0]?.id ?? null);
     setHighlightedNetId(null);
+    setLastSavedPath(null);
   }, [publishHistory]);
 
   const harness = project.subHarnesses.find((item) => item.id === activeHarnessId) ?? project.subHarnesses[0];
@@ -79,14 +83,17 @@ export default function App() {
 
   const netOptions = useMemo(() => project.nets.slice().sort((a, b) => a.name.localeCompare(b.name)), [project.nets]);
 
-  const saveJson = useCallback(() => {
-    const blob = new Blob([serializeProject(project)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${project.name.replace(/[^a-z0-9_-]+/gi, '_')}.wiremaster.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  const saveJson = useCallback(async () => {
+    const filename = `${project.name.replace(/[^a-z0-9_-]+/gi, '_')}.wiremaster.json`;
+    try {
+      const savedPath = await invoke<string | null>('save_project_json', {
+        filename,
+        contents: serializeProject(project),
+      });
+      if (savedPath) setLastSavedPath(savedPath);
+    } catch (error) {
+      window.alert(`Could not save project: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }, [project]);
 
   const openJson = useCallback(() => {
@@ -110,10 +117,11 @@ export default function App() {
           {project.subHarnesses.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select>
         <div className="toolbar-spacer" />
+        {lastSavedPath && <span className="save-status" title={lastSavedPath}>Saved ✓</span>}
         <button onClick={() => replaceProject(createBlankProject())}>New</button>
         <button onClick={() => replaceProject(createDemoProject())}>Demo</button>
         <button onClick={openJson}>Open</button>
-        <button onClick={saveJson}>Save JSON</button>
+        <button onClick={() => void saveJson()}>Save…</button>
         <button disabled={!historyState.undoDepth} onClick={undo}>Undo {historyState.undoDepth || ''}</button>
         <button disabled={!historyState.redoDepth} onClick={redo}>Redo {historyState.redoDepth || ''}</button>
       </header>
@@ -144,10 +152,16 @@ export default function App() {
         <section className="viewer-pane">
           <div className="pane-title viewer-title">
             <div><strong>Electrical Viewer</strong><span>Logical view · layout only</span></div>
-            <select value={highlightedNetId ?? ''} onChange={(event) => setHighlightedNetId(event.target.value || null)}>
-              <option value="">Highlight net…</option>
-              {netOptions.map((net) => <option key={net.id} value={net.id}>{net.name}</option>)}
-            </select>
+            <div className="viewer-tools">
+              <div className="wire-style-toggle" role="group" aria-label="Wire rendering style">
+                <button className={wireRenderStyle === 'smooth' ? 'active' : ''} onClick={() => setWireRenderStyle('smooth')}>Smooth</button>
+                <button className={wireRenderStyle === 'orthogonal' ? 'active' : ''} onClick={() => setWireRenderStyle('orthogonal')}>90°</button>
+              </div>
+              <select value={highlightedNetId ?? ''} onChange={(event) => setHighlightedNetId(event.target.value || null)}>
+                <option value="">Highlight net…</option>
+                {netOptions.map((net) => <option key={net.id} value={net.id}>{net.name}</option>)}
+              </select>
+            </div>
           </div>
           <div className="viewer-canvas">
             <ElectricalViewer
@@ -155,6 +169,7 @@ export default function App() {
               harnessId={harness.id}
               selectedConnectorId={selectedConnectorId}
               highlightedNetId={highlightedNetId}
+              wireRenderStyle={wireRenderStyle}
               onSelectConnector={selectConnector}
               onHighlightNet={setHighlightedNetId}
               onLayoutChange={(connectorId, x, y) => commit((draft) => { const target = draft.subHarnesses.find((h) => h.id === harness.id)!; target.viewerLayout.connectorPositions[connectorId] = { x, y }; })}
