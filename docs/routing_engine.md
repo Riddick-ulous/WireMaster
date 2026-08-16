@@ -38,7 +38,9 @@ Every straight run between two bends must be at least 28 px. The first run from 
 
 ### R6 Element keepout
 
-Connector and splice bodies are hard obstacles. The route centerline must remain at least `NODE_CLEARANCE = 14 px` outside their measured rectangles, except for the owning straight terminal run entering/leaving that element.
+Connector and splice bodies are hard obstacles. The normal route centerline clearance is `NODE_CLEARANCE = 14 px` outside their measured rectangles, except for the owning straight terminal run entering/leaving that element.
+
+A connector-near splice that is represented by an active junction envelope uses `CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE = 6 px` around its small physical 12 px marker. This local reduction exists only to keep adjacent staggered junction markers from consuming the transverse approach corridors. The physical marker itself remains a hard obstacle, as do its label and its complete junction envelope. Connector bodies, free splices and connector-near splices without such a junction envelope retain the normal 14 px rule.
 
 ### R7 Fixed connector-pin wire labels
 
@@ -58,7 +60,7 @@ The label never migrates to a later segment to make routing easier. If the requi
 
 The visible splice annotation (`S# · nW`) is deterministic annotation geometry and owns a padded hard keepout. Routed wires may not pass through splice text.
 
-The label must be offset from the splice routing baseline; displaying the label may not consume the only usable terminal direction of the splice.
+For a connector-near splice, the annotation is placed on the connector-facing/anchor side, in the corridor already reserved for the straight anchor lead. It must not consume an external fan-out side. Free-splice labels follow their normal deterministic placement.
 
 ### R9 No longitudinal overlap between wires
 
@@ -96,9 +98,12 @@ Initial constants at viewer scale 1.0:
 - `SPLICE_FANIN_MIN_LENGTH = 28 px`,
 - `SPLICE_FANIN_PADDING = 14 px`,
 - `CONNECTOR_SPLICE_BASE_GAP = 56 px`,
-- `CONNECTOR_SPLICE_STAGGER = 28 px`.
+- `CONNECTOR_SPLICE_STAGGER = 56 px`,
+- `CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE = 6 px`.
 
 Normal routing hard constraints apply from every external wire up to its assigned landing port. Each landing port has unit capacity: unrelated external branches may not longitudinally overlap on their approach and must maintain normal spacing.
+
+Before landing ports are assigned, all required splice junction envelopes are generated. Port assignment then evaluates each mandatory 28 px terminal stub against connector/splice bodies, labels and every **foreign** junction envelope. A landing port whose mandatory outward stub already enters another splice's envelope is treated as blocked and must not be selected while an unblocked assignment exists. The global path planner therefore receives only locally viable junction approaches.
 
 Inside the fan-in/junction envelope, branches belonging to that same splice may converge in a controlled orthogonal junction fan to the one logical splice point. This internal junction geometry is the only exception to normal wire-wire spacing, longitudinal-overlap and minimum-bend-spacing rules because every coincident segment there represents the same intentional electrical node. It must not be counted as a wire crossing.
 
@@ -112,14 +117,16 @@ A free splice uses its four normal sides while branch count is small. Above four
 
 The connector-facing side belongs to the straight anchor lead and is not considered external branch capacity. The physical splice symbol is placed farther away from the connector than in the original M0.2 implementation so top/bottom or left/right branch approaches have usable space.
 
-The anchor lead remains straight. To prevent adjacent connector-near splices from blocking each other's transverse approaches, anchor cavities alternate between two radial routing lanes:
+The anchor lead remains straight. Adjacent anchor cavities alternate between two radial routing lanes:
 
-- even anchor-pin index: base radial gap `56 px`,
-- odd anchor-pin index: base radial gap + one routing grid = `84 px`.
+- even anchor-pin index: radial gap `56 px`,
+- odd anchor-pin index: radial gap `112 px`.
 
-The staggering is always radial (away from the connector) and rotates with the connector. It never introduces a bend into the anchor lead.
+The two lanes are therefore separated by two 28 px routing grids. A one-grid radial difference is insufficient because neighbouring mandatory 28 px terminal runs can otherwise intersect before either branch is allowed to bend. The staggering is always radial (away from the connector) and rotates with the connector. It never introduces a bend into the anchor lead.
 
-With one or two globally routed external branches, the three non-connector-facing physical sides are used directly. From **three external branches onward** (typically a 4-wire splice including its anchor), a connector-near junction envelope is generated even though the total branch count is below the free-splice high-degree threshold. Landing ports are distributed only on the three non-connector-facing sides, with spare capacity for local annotation/obstacle conflicts.
+With one or two globally routed external branches, the three non-connector-facing physical sides are used directly. From **three external branches onward** (typically a 4-wire splice including its anchor), a connector-near junction envelope is generated even though the total branch count is below the free-splice high-degree threshold.
+
+When two connector-near junctions are adjacent on the same connector side, each junction additionally reserves the transverse side that points toward the neighbouring junction. For example, if S1 is above S2 on the right side of a connector, S1 blocks `bottom` and S2 blocks `top`. Both junctions therefore fan away from one another instead of competing for the narrow region between them. The remaining external sides receive as many virtual landing ports as required by branch count.
 
 This means a connector-near splice is not limited to three physical 12 px handles. The visible `S#` remains one point, while the nearby routing zone supplies the external landing capacity.
 
@@ -179,8 +186,8 @@ The planner shall:
 2. construct deterministic endpoint-label and splice-label keepouts,
 3. derive mandatory terminal straight distances,
 4. derive connector-near radial stagger placement before routing,
-5. derive splice fan-in/junction envelopes and virtual landing ports where R13 requires them,
-6. assign external branches to landing ports deterministically before expensive path search,
+5. derive all splice fan-in/junction envelopes and virtual landing ports where R13 requires them,
+6. assign external branches to landing ports deterministically **against all bodies, labels and foreign junction envelopes**, rejecting locally blocked mandatory terminal stubs before expensive path search,
 7. create useful X/Y corridor candidates from terminals, obstacle boundaries and already reserved wire corridors,
 8. reject hard-constraint violations before scoring,
 9. retain bounded alternative routes and/or use bounded backtracking/beam search so a locally attractive early wire can be changed when it blocks later wires,
@@ -228,9 +235,11 @@ The suite must cover at minimum:
 - deterministic output,
 - routing stability when a previous valid route still fits,
 - connector-near and free-splice fan-out,
-- adjacent connector-near splices with one-grid radial staggering,
+- adjacent connector-near splices with two-grid radial lane separation,
 - connector-near splice with three external branches plus straight anchor lead,
-- adjacent 3-wire connector-near splices,
+- adjacent connector-near 4-wire junctions with three external branches each,
+- symmetric transverse neighbour-side reservation,
+- landing-port assignment that rejects mandatory stubs entering a foreign junction envelope,
 - scalable 6-wire splice fan-in,
 - scalable 12-wire splice fan-in with one logical junction,
 - connector rotations 0/90/180/270 degrees,
