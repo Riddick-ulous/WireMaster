@@ -6,6 +6,9 @@ import {
   createConnectorSplice,
   createConnectorSpliceFromSplice,
   createFreeSpliceForNet,
+  insertFreeSpliceOnWire,
+  removeConnector,
+  setSplicePinMembers,
 } from '../project';
 import { reconcileProject } from '../resolver';
 import { createBlankProject } from '../sample';
@@ -87,6 +90,66 @@ describe('explicit splice branch moves', () => {
     expect(active.every((wire) => [wire.endpointA, wire.endpointB].some((item) => item.kind === 'splice' && item.spliceId === splice.id))).toBe(true);
     expect(legacyWire.status).toBe('NEEDS_REVIEW');
     expect(net.connectivityStatus).toBe('RESOLVED');
+  });
+
+  it('moves an existing connector wire to another splice without changing its wire identity', () => {
+    const { project, harness, connectors, net } = assignedProject(4);
+    const first = createConnectorSplice(project, harness.id, connectors[0].pins[0].id, [
+      endpoint(connectors[1]),
+      endpoint(connectors[2]),
+      endpoint(connectors[3]),
+    ]);
+    reconcileProject(project);
+    const second = createConnectorSpliceFromSplice(project, harness.id, first.id, connectors[1].pins[0].id, []);
+    reconcileProject(project);
+
+    const movedPin = endpoint(connectors[2]);
+    const original = harness.wires.find((wire) => wire.status === 'ACTIVE'
+      && [wire.endpointA, wire.endpointB].some((item) => item.kind === 'pin' && item.pinId === movedPin.pinId))!;
+    const originalId = original.id;
+
+    setSplicePinMembers(project, harness.id, second.id, [movedPin]);
+    reconcileProject(project);
+
+    expect(original.id).toBe(originalId);
+    expect(original.status).toBe('ACTIVE');
+    expect([original.endpointA, original.endpointB].some((item) => item.kind === 'splice' && item.spliceId === second.id)).toBe(true);
+    expect(first.memberEndpoints.some((item) => item.kind === 'pin' && item.pinId === movedPin.pinId)).toBe(false);
+    expect(second.memberEndpoints.some((item) => item.kind === 'pin' && item.pinId === movedPin.pinId)).toBe(true);
+    expect(net.connectivityStatus).toBe('RESOLVED');
+  });
+
+  it('inserts a free splice into an existing active wire and preserves that wire identity', () => {
+    const { project, harness, connectors, net } = assignedProject(2);
+    reconcileProject(project);
+    const original = harness.wires.find((wire) => wire.netId === net.id && wire.status === 'ACTIVE')!;
+    const originalId = original.id;
+
+    const splice = insertFreeSpliceOnWire(project, harness.id, original.id);
+    reconcileProject(project);
+
+    expect(original.id).toBe(originalId);
+    expect(original.status).toBe('ACTIVE');
+    expect(harness.wires.filter((wire) => wire.netId === net.id && wire.status === 'ACTIVE')).toHaveLength(2);
+    expect(harness.wires.filter((wire) => wire.status === 'ACTIVE').every((wire) => [wire.endpointA, wire.endpointB].some((item) => item.kind === 'splice' && item.spliceId === splice.id))).toBe(true);
+    expect(connectors.every((connector) => connector.pins[0].netId === net.id)).toBe(true);
+    expect(net.connectivityStatus).toBe('RESOLVED');
+  });
+
+  it('removes a connector non-destructively and leaves affected topology reviewable', () => {
+    const { project, harness, connectors, net } = assignedProject(3);
+    const splice = createConnectorSplice(project, harness.id, connectors[0].pins[0].id, [endpoint(connectors[1]), endpoint(connectors[2])]);
+    reconcileProject(project);
+    const originalWireCount = harness.wires.length;
+
+    removeConnector(project, harness.id, connectors[0].id);
+    reconcileProject(project);
+
+    expect(harness.connectors.some((connector) => connector.id === connectors[0].id)).toBe(false);
+    expect(splice.status).toBe('ORPHANED');
+    expect(harness.wires).toHaveLength(originalWireCount);
+    expect(harness.wires.some((wire) => wire.status === 'DANGLING' || wire.status === 'ORPHANED' || wire.status === 'NEEDS_REVIEW')).toBe(true);
+    expect(net.connectivityStatus).toBe('UNRESOLVED');
   });
 
   it('creates a free splice for an unresolved net only when no explicit topology exists', () => {
