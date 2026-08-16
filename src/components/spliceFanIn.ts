@@ -17,7 +17,7 @@ import {
 export const SPLICE_PORT_PITCH = 18;
 export const SPLICE_FANIN_MIN_LENGTH = 28;
 export const SPLICE_FANIN_PADDING = 14;
-const CONNECTOR_NEAR_THRESHOLD = 96;
+const CONNECTOR_NEAR_THRESHOLD = 112;
 const FAN_KEY = '|fanin:';
 const BLOCKED_PORT_COST = 1_000_000;
 const OPPOSITE_SIDE_COST = 1_200;
@@ -125,9 +125,16 @@ export function buildSpliceFanInGeometry(
   branchCount: number,
   obstacles: RouteObstacle[] = [],
 ): SpliceFanInGeometry | null {
-  if (!isSpliceTerminal(terminal) || branchCount <= 4) return null;
+  if (!isSpliceTerminal(terminal)) return null;
   const logicalCenter = centerOfTerminal(terminal);
   const blockedSide = blockedConnectorSide(nodeId, logicalCenter, obstacles);
+  // A free splice has four usable physical sides and only needs an expanded
+  // landing envelope above that capacity. A connector-near splice loses its
+  // connector-facing side; as soon as two external branches exist we create a
+  // controlled three-sided junction zone instead of forcing both wires through
+  // the few remaining 12 px physical handles.
+  const needsEnvelope = blockedSide ? branchCount >= 2 : branchCount > 4;
+  if (!needsEnvelope) return null;
   const availableSides = SIDES.filter((side) => side !== blockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
   const portsPerSide = basePerSide + (blockedSide ? 1 : 0);
