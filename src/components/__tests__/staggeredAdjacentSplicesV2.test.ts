@@ -2,7 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { connectorNearSplicePosition } from '../connectorNearSpliceLayout';
 import { planOrthogonalRoutesV2 } from '../orthogonalRouterV2';
 import { spliceLabelObstacle } from '../routingLabels';
-import { MIN_BEND_SPACING, routeCrossesObstacle, type CardinalSide, type RouteObstacle, type RouteRequest, type RouteTerminal } from '../routingGeometry';
+import { expandSpliceFanInRouting } from '../spliceFanIn';
+import {
+  MIN_BEND_SPACING,
+  outward,
+  routeCrossesObstacle,
+  routeSegments,
+  segmentCrossesObstacle,
+  type CardinalSide,
+  type RouteObstacle,
+  type RouteRequest,
+  type RouteTerminal,
+} from '../routingGeometry';
 import type { ConnectorInstance, PinInstance, SpliceInstance } from '../../core/model';
 
 function pin(index: number): PinInstance {
@@ -58,6 +69,23 @@ describe('staggered adjacent connector-near splices', () => {
       { id: 'W8', source: terminal('C2', 'C2-p4', 'left', 900, 340), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
       { id: 'W10', source: terminal('C4', 'C4-p4', 'top', 580, 700), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
     ];
+
+    const expanded = expandSpliceFanInRouting(requests, obstacles);
+    expect(expanded.geometries.get('S1')?.secondaryBlockedSide).toBe('bottom');
+    expect(expanded.geometries.get('S2')?.secondaryBlockedSide).toBe('top');
+
+    for (const request of expanded.requests) {
+      const geometry = expanded.geometries.get(request.target.nodeId);
+      if (!geometry) continue;
+      const port = request.target.options[0];
+      const stub = routeSegments([port.point, outward(port.point, port.side, MIN_BEND_SPACING)])[0];
+      expect(stub).toBeDefined();
+      if (!stub) continue;
+      for (const other of expanded.geometries.values()) {
+        if (other.nodeId === geometry.nodeId) continue;
+        expect(segmentCrossesObstacle(stub, other.envelope), `${request.id} landing stub enters ${other.nodeId} junction`).toBe(false);
+      }
+    }
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
     for (const request of requests) {
