@@ -6,6 +6,7 @@ import {
   Handle,
   Position,
   ReactFlow,
+  getBezierPath,
   useNodesState,
   type Edge,
   type EdgeProps,
@@ -44,7 +45,7 @@ function ConnectorNodeView({ data }: NodeProps<ConnectorNode>) {
   );
 }
 
-function OrthogonalWireEdge({
+function WireEdge({
   id,
   sourceX,
   sourceY,
@@ -52,44 +53,74 @@ function OrthogonalWireEdge({
   targetY,
   data,
   style,
-  label,
-  labelStyle,
   markerStart,
   markerEnd,
   interactionWidth,
 }: EdgeProps) {
+  const routing = data?.routing === 'orthogonal' ? 'orthogonal' : 'smooth';
   const laneOffset = typeof data?.laneOffset === 'number' ? data.laneOffset : 0;
-  const laneX = (sourceX + targetX) / 2 + laneOffset;
-  const labelY = (sourceY + targetY) / 2;
+  const wireInfo = typeof data?.wireInfo === 'string' ? data.wireInfo : '';
+  const labelFill = typeof data?.labelFill === 'string' ? data.labelFill : '#aeb8c6';
+  const labelOpacity = typeof data?.labelOpacity === 'number' ? data.labelOpacity : 1;
 
-  // Orthogonal routing deliberately uses only horizontal/vertical segments.
-  // Wires connecting the same connector pair receive separate vertical lanes
-  // spaced by at least one pin pitch, so their trunks cannot overlap.
-  const path = [
-    `M ${sourceX} ${sourceY}`,
-    `L ${laneX} ${sourceY}`,
-    `L ${laneX} ${targetY}`,
-    `L ${targetX} ${targetY}`,
-  ].join(' ');
+  let path: string;
+  if (routing === 'orthogonal') {
+    const laneX = (sourceX + targetX) / 2 + laneOffset;
+    path = [
+      `M ${sourceX} ${sourceY}`,
+      `L ${laneX} ${sourceY}`,
+      `L ${laneX} ${targetY}`,
+      `L ${targetX} ${targetY}`,
+    ].join(' ');
+  } else {
+    [path] = getBezierPath({
+      sourceX,
+      sourceY,
+      sourcePosition: Position.Right,
+      targetX,
+      targetY,
+      targetPosition: Position.Left,
+    });
+  }
 
   return (
-    <BaseEdge
-      id={id}
-      path={path}
-      label={label}
-      labelX={laneX}
-      labelY={labelY}
-      style={style}
-      labelStyle={labelStyle}
-      markerStart={markerStart}
-      markerEnd={markerEnd}
-      interactionWidth={interactionWidth}
-    />
+    <>
+      <BaseEdge
+        id={id}
+        path={path}
+        style={style}
+        markerStart={markerStart}
+        markerEnd={markerEnd}
+        interactionWidth={interactionWidth}
+      />
+      {wireInfo && (
+        <g className="wire-end-labels" opacity={labelOpacity} pointerEvents="none">
+          <text
+            x={sourceX + 10}
+            y={sourceY - 6}
+            textAnchor="start"
+            fill={labelFill}
+            className="wire-end-label"
+          >
+            {wireInfo}
+          </text>
+          <text
+            x={targetX - 10}
+            y={targetY - 6}
+            textAnchor="end"
+            fill={labelFill}
+            className="wire-end-label"
+          >
+            {wireInfo}
+          </text>
+        </g>
+      )}
+    </>
   );
 }
 
 const nodeTypes = { connector: ConnectorNodeView };
-const edgeTypes = { 'orthogonal-wire': OrthogonalWireEdge };
+const edgeTypes = { 'wire-edge': WireEdge };
 
 const colorMap: Record<string, string> = {
   VIOLET: '#a970ff', RED: '#ff5b67', GREEN: '#4adf8f', WHITE: '#f4f6fa', BLACK: '#353a46', BLUE: '#52a8ff', YELLOW: '#ffd65c', ORANGE: '#ff9f4a', BROWN: '#a8734a', GREY: '#9aa3b2',
@@ -142,9 +173,6 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     selected: connector.id === selectedConnectorId,
   })), [harness.connectors, harness.viewerLayout.connectorPositions, selectedConnectorId]);
 
-  // React Flow is controlled here. Keep a local live node state so dragging
-  // updates the rendered node/halo/connected edges every pointer movement;
-  // only the final position is committed into the project on drag stop.
   const [nodes, setNodes, onNodesChange] = useNodesState<ConnectorNode>(desiredNodes);
   useEffect(() => {
     setNodes((current) => desiredNodes.map((desired) => {
@@ -166,18 +194,24 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     const highlighted = highlightedNetId === wire.netId;
     const color = colorMap[primary ?? ''] ?? '#9aa3b2';
     const colorText = [primary, secondary].filter(Boolean).join('/') || '—';
+    const dimmed = Boolean(highlightedNetId && !highlighted);
     return {
       id: wire.id,
       source: wire.endpointA.connectorId,
       sourceHandle: `s-${wire.endpointA.pinId}`,
       target: wire.endpointB.connectorId,
       targetHandle: `t-${wire.endpointB.pinId}`,
-      type: wireRenderStyle === 'orthogonal' ? 'orthogonal-wire' : 'default',
-      label: `${wire.displayId} · ${gauge ?? '—'} · ${colorText}`,
+      type: 'wire-edge',
       animated: highlighted,
-      style: { stroke: color, strokeWidth: highlighted ? 5 : 2.5, opacity: highlightedNetId && !highlighted ? 0.18 : 1 },
-      labelStyle: { fill: highlighted ? '#fff' : '#c8cfdb', fontSize: 11, fontWeight: 600 },
-      data: { netId: wire.netId, laneOffset: laneOffsets.get(wire.id) ?? 0 },
+      style: { stroke: color, strokeWidth: highlighted ? 5 : 2.5, opacity: dimmed ? 0.18 : 1 },
+      data: {
+        netId: wire.netId,
+        routing: wireRenderStyle,
+        laneOffset: laneOffsets.get(wire.id) ?? 0,
+        wireInfo: `${wire.displayId} · ${gauge ?? '—'} · ${colorText}`,
+        labelFill: highlighted ? '#fff' : '#aeb8c6',
+        labelOpacity: dimmed ? 0.22 : 0.9,
+      },
     };
   }), [activeWires, highlightedNetId, laneOffsets, wireClasses, wireRenderStyle]);
 
