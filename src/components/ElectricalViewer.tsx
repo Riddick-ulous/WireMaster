@@ -17,7 +17,6 @@ import {
 } from '@xyflow/react';
 import type {
   ConnectorInstance,
-  PinEndpoint,
   Project,
   SpliceInstance,
   UUID,
@@ -35,6 +34,7 @@ interface ConnectorNodeData extends Record<string, unknown> {
 interface SpliceNodeData extends Record<string, unknown> {
   splice: SpliceInstance;
   netName: string;
+  labelSide: 'left' | 'right' | 'top' | 'bottom';
 }
 
 type ConnectorNode = Node<ConnectorNodeData, 'connector'>;
@@ -45,7 +45,7 @@ export type WireRenderStyle = 'smooth' | 'orthogonal';
 
 const PIN_PITCH_PX = 28;
 const BREAKOUT_BASE_PX = 38;
-const SPLICE_BREAKOUT_PX = 18;
+const SPLICE_BREAKOUT_PX = 14;
 
 type EdgeEnd = 'source' | 'target';
 
@@ -113,15 +113,17 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
 
 function SpliceNodeView({ data }: NodeProps<SpliceNode>) {
   return (
-    <div className={`viewer-splice ${data.splice.placement.toLowerCase()} status-${data.splice.status.toLowerCase()}`}>
+    <div
+      className={`viewer-splice ${data.splice.placement.toLowerCase()} status-${data.splice.status.toLowerCase()} label-${data.labelSide}`}
+      title={`${data.splice.displayId} · ${data.netName} · ${data.splice.placement === 'CONNECTOR' ? 'connector-near' : 'free splice'}`}
+    >
       <Handle
         id={`s-${data.splice.id}`}
         type="source"
         position={Position.Right}
         className="splice-handle"
       />
-      <strong>{data.splice.displayId}</strong>
-      <span>{data.netName}</span>
+      <span className="splice-tag">{data.splice.displayId}</span>
     </div>
   );
 }
@@ -143,9 +145,6 @@ interface EndLabelPosition {
 function endpointLabelPosition(x: number, y: number, position: Position): EndLabelPosition {
   if (position === Position.Left) return { x: x - 10, y: y - 5, anchor: 'end', rotation: 0 };
   if (position === Position.Right) return { x: x + 10, y: y - 5, anchor: 'start', rotation: 0 };
-  // Keep labels beside vertical breakout stubs rather than directly on top of
-  // the wire. The lateral offset is intentionally larger than the label's
-  // outline/stroke so highlighted wires stay visually separate as well.
   if (position === Position.Top) return { x: x - 10, y: y - 10, anchor: 'start', rotation: -90 };
   return { x: x + 10, y: y + 10, anchor: 'start', rotation: 90 };
 }
@@ -230,9 +229,14 @@ function WireEdge({
   const wireInfo = typeof data?.wireInfo === 'string' ? data.wireInfo : '';
   const labelFill = typeof data?.labelFill === 'string' ? data.labelFill : '#aeb8c6';
   const labelOpacity = typeof data?.labelOpacity === 'number' ? data.labelOpacity : 1;
+  const sourceLabelVisible = data?.sourceLabelVisible !== false;
+  const targetLabelVisible = data?.targetLabelVisible !== false;
+  const direct = data?.direct === true;
 
   let path: string;
-  if (routing === 'orthogonal') {
+  if (direct) {
+    path = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+  } else if (routing === 'orthogonal') {
     path = orthogonalPath(
       sourceX,
       sourceY,
@@ -268,28 +272,32 @@ function WireEdge({
         markerEnd={markerEnd}
         interactionWidth={interactionWidth}
       />
-      {wireInfo && (
+      {wireInfo && (sourceLabelVisible || targetLabelVisible) && (
         <g className="wire-end-labels" opacity={labelOpacity} pointerEvents="none">
-          <text
-            x={sourceLabel.x}
-            y={sourceLabel.y}
-            textAnchor={sourceLabel.anchor}
-            transform={sourceLabel.rotation ? `rotate(${sourceLabel.rotation} ${sourceLabel.x} ${sourceLabel.y})` : undefined}
-            fill={labelFill}
-            className="wire-end-label"
-          >
-            {wireInfo}
-          </text>
-          <text
-            x={targetLabel.x}
-            y={targetLabel.y}
-            textAnchor={targetLabel.anchor}
-            transform={targetLabel.rotation ? `rotate(${targetLabel.rotation} ${targetLabel.x} ${targetLabel.y})` : undefined}
-            fill={labelFill}
-            className="wire-end-label"
-          >
-            {wireInfo}
-          </text>
+          {sourceLabelVisible && (
+            <text
+              x={sourceLabel.x}
+              y={sourceLabel.y}
+              textAnchor={sourceLabel.anchor}
+              transform={sourceLabel.rotation ? `rotate(${sourceLabel.rotation} ${sourceLabel.x} ${sourceLabel.y})` : undefined}
+              fill={labelFill}
+              className="wire-end-label"
+            >
+              {wireInfo}
+            </text>
+          )}
+          {targetLabelVisible && (
+            <text
+              x={targetLabel.x}
+              y={targetLabel.y}
+              textAnchor={targetLabel.anchor}
+              transform={targetLabel.rotation ? `rotate(${targetLabel.rotation} ${targetLabel.x} ${targetLabel.y})` : undefined}
+              fill={labelFill}
+              className="wire-end-label"
+            >
+              {wireInfo}
+            </text>
+          )}
         </g>
       )}
     </>
@@ -376,12 +384,43 @@ function connectorNearSplicePosition(
   connector: ConnectorInstance | undefined,
   connectorPosition: { x: number; y: number },
   rotation: ViewerRotation,
-): { x: number; y: number } {
+): { position: { x: number; y: number }; labelSide: SpliceNodeData['labelSide'] } {
   const pinIndex = Math.max(0, connector?.pins.findIndex((pin) => pin.id === splice.anchorPinId) ?? 0);
-  if (rotation === 180) return { x: connectorPosition.x - 72, y: connectorPosition.y + 29 + pinIndex * PIN_PITCH_PX };
-  if (rotation === 90) return { x: connectorPosition.x + 6 + pinIndex * 32, y: connectorPosition.y + 148 };
-  if (rotation === 270) return { x: connectorPosition.x + 6 + pinIndex * 32, y: connectorPosition.y - 58 };
-  return { x: connectorPosition.x + 214, y: connectorPosition.y + 29 + pinIndex * PIN_PITCH_PX };
+  if (rotation === 180) return { position: { x: connectorPosition.x - 30, y: connectorPosition.y + 39 + pinIndex * PIN_PITCH_PX }, labelSide: 'left' };
+  if (rotation === 90) return { position: { x: connectorPosition.x + 10 + pinIndex * 32, y: connectorPosition.y + 136 }, labelSide: 'bottom' };
+  if (rotation === 270) return { position: { x: connectorPosition.x + 10 + pinIndex * 32, y: connectorPosition.y - 28 }, labelSide: 'top' };
+  return { position: { x: connectorPosition.x + 198, y: connectorPosition.y + 39 + pinIndex * PIN_PITCH_PX }, labelSide: 'right' };
+}
+
+function defaultFreeSplicePosition(
+  splice: SpliceInstance,
+  connectors: ConnectorInstance[],
+  connectorPositions: Record<UUID, { x: number; y: number }>,
+  index: number,
+): { x: number; y: number } {
+  const points = splice.memberEndpoints.flatMap((endpoint) => {
+    if (endpoint.kind !== 'pin') return [];
+    const connector = connectors.find((item) => item.id === endpoint.connectorId);
+    if (!connector) return [];
+    const position = connectorPositions[connector.id];
+    if (!position) return [];
+    return [{ x: position.x + 90, y: position.y + 70 }];
+  });
+  if (!points.length) return { x: 360 + index * 40, y: 260 + index * 30 };
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+}
+
+function connectorNearAnchorLead(wire: ActiveWire, splices: Map<UUID, SpliceInstance>): boolean {
+  const spliceEndpoint = wire.endpointA.kind === 'splice' ? wire.endpointA : wire.endpointB.kind === 'splice' ? wire.endpointB : null;
+  const pinEndpoint = wire.endpointA.kind === 'pin' ? wire.endpointA : wire.endpointB.kind === 'pin' ? wire.endpointB : null;
+  if (!spliceEndpoint || !pinEndpoint) return false;
+  const splice = splices.get(spliceEndpoint.spliceId);
+  return splice?.placement === 'CONNECTOR'
+    && splice.anchorPinId === pinEndpoint.pinId
+    && splice.ownerConnectorId === pinEndpoint.connectorId;
 }
 
 interface Props {
@@ -426,16 +465,21 @@ export function ElectricalViewer({
     }));
     const connectorById = new Map(harness.connectors.map((connector) => [connector.id, connector]));
     const connectorPositionById = new Map(connectors.map((node) => [node.id, node.position]));
+    const resolvedConnectorPositions = Object.fromEntries(connectors.map((node) => [node.id, node.position])) as Record<UUID, { x: number; y: number }>;
 
     const splices: SpliceNode[] = harness.splices
       .filter((splice) => splice.status !== 'ORPHANED')
       .map((splice, index) => {
-        let position = harness.viewerLayout.splicePositions[splice.id] ?? { x: 360 + index * 70, y: 260 };
+        let position = harness.viewerLayout.splicePositions[splice.id]
+          ?? defaultFreeSplicePosition(splice, harness.connectors, resolvedConnectorPositions, index);
+        let labelSide: SpliceNodeData['labelSide'] = 'right';
         if (splice.placement === 'CONNECTOR' && splice.ownerConnectorId) {
           const connector = connectorById.get(splice.ownerConnectorId);
           const connectorPosition = connectorPositionById.get(splice.ownerConnectorId) ?? { x: 80, y: 120 };
           const rotation = harness.viewerLayout.connectorRotations[splice.ownerConnectorId] ?? 0;
-          position = connectorNearSplicePosition(splice, connector, connectorPosition, rotation);
+          const placement = connectorNearSplicePosition(splice, connector, connectorPosition, rotation);
+          position = placement.position;
+          labelSide = placement.labelSide;
         }
         return {
           id: splice.id,
@@ -445,6 +489,7 @@ export function ElectricalViewer({
           data: {
             splice,
             netName: project.nets.find((net) => net.id === splice.netId)?.name ?? 'Unknown net',
+            labelSide,
           },
         };
       });
@@ -462,6 +507,7 @@ export function ElectricalViewer({
   }, [desiredNodes, setNodes]);
 
   const activeWires = useMemo(() => harness.wires.filter(isActiveWire), [harness.wires]);
+  const spliceById = useMemo(() => new Map(harness.splices.map((splice) => [splice.id, splice])), [harness.splices]);
   const routeCorridors = useMemo(() => corridorOffsets(activeWires), [activeWires]);
   const breakouts = useMemo(() => connectorBreakouts(activeWires, harness.connectors), [activeWires, harness.connectors]);
 
@@ -474,6 +520,7 @@ export function ElectricalViewer({
     const color = colorMap[primary ?? ''] ?? '#9aa3b2';
     const colorText = [primary, secondary].filter(Boolean).join('/') || '—';
     const dimmed = Boolean(highlightedNetId && !highlighted);
+    const anchorLead = connectorNearAnchorLead(wire, spliceById);
     return {
       id: wire.id,
       source: nodeIdForEndpoint(wire.endpointA),
@@ -481,20 +528,23 @@ export function ElectricalViewer({
       target: nodeIdForEndpoint(wire.endpointB),
       targetHandle: handleIdForEndpoint(wire.endpointB),
       type: 'wire-edge',
-      animated: highlighted,
-      style: { stroke: color, strokeWidth: highlighted ? 5 : 2.5, opacity: dimmed ? 0.18 : 1 },
+      animated: highlighted && !anchorLead,
+      style: { stroke: color, strokeWidth: highlighted ? 5 : anchorLead ? 2 : 2.5, opacity: dimmed ? 0.18 : 1 },
       data: {
         netId: wire.netId,
         routing: wireRenderStyle,
+        direct: anchorLead,
         corridorOffset: routeCorridors.get(wire.id) ?? 0,
         sourceBreakout: wire.endpointA.kind === 'pin' ? breakouts.get(breakoutKey(wire.id, 'source')) ?? BREAKOUT_BASE_PX : SPLICE_BREAKOUT_PX,
         targetBreakout: wire.endpointB.kind === 'pin' ? breakouts.get(breakoutKey(wire.id, 'target')) ?? BREAKOUT_BASE_PX : SPLICE_BREAKOUT_PX,
         wireInfo: `${wire.displayId} · ${gauge ?? '—'} · ${colorText}`,
+        sourceLabelVisible: !anchorLead && wire.endpointA.kind === 'pin',
+        targetLabelVisible: !anchorLead && wire.endpointB.kind === 'pin',
         labelFill: highlighted ? '#fff' : '#aeb8c6',
         labelOpacity: dimmed ? 0.22 : 0.9,
       },
     };
-  }), [activeWires, breakouts, highlightedNetId, routeCorridors, wireClasses, wireRenderStyle]);
+  }), [activeWires, breakouts, highlightedNetId, routeCorridors, spliceById, wireClasses, wireRenderStyle]);
 
   return (
     <ReactFlow<FlowNode>
