@@ -1,23 +1,38 @@
 # Roadmap
 
-## M0.1 – Core vertical slice
+## M0.1 – Core vertical slice — COMPLETE
 - domain model + schema version
-- JSON persistence
+- JSON persistence + native Save dialog
 - transaction history (30)
 - connector-centric editor spike
 - project nets
+- deterministic rectangular copy/paste + atomic undo
 - 2-pin auto-wire resolver + persistent reconciliation
 - live React Flow viewer
 - wire ID / gauge / color labels
-- viewer -> editor selection
-- core tests
+- viewer -> editor selection + net highlighting
+- draggable/persisted connector layout
+- connector rotation 0/90/180/270°
+- Smooth + custom orthogonal wire rendering
+- single visual handle per pin
+- compact rotated connector presentation
+- core regression tests
+- Linux + Windows Tauri CI
+
+Merge gate: exact-head CI green plus final local visual confirmation of the last Top/Bottom endpoint-label offset fix in PR #1. After merge, M0.1 is frozen; continue on M0.2 from `main`.
 
 ## M0.2 – Splices + deeper reconciliation
-- unresolved multi-point nets
+- explicit `SpliceInstance` topology
+- unresolved multi-point nets represented without guessing topology
 - connector-near splice workflow
 - free splice objects
+- pin↔splice and splice↔splice wire endpoints
 - multiple splices per net / branch-moving UX
+- persistent splice/wire identity under topology edits
 - splice reconciliation and review states
+- connector-near splice child rows in the editor
+- splice representation in the logical viewer
+- focused reconciliation regression tests
 
 ## M0.3 – Libraries + inheritance + contacts
 - Built-in/User/Project library layering
