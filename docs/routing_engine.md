@@ -127,15 +127,17 @@ The two lanes are therefore separated by two 28 px routing grids. A one-grid rad
 
 With **one** globally routed external branch, the three non-connector-facing physical sides remain available directly.
 
-With **exactly two** globally routed external branches (normally a 3-wire splice including its straight anchor lead), the router assigns the two branches **jointly** to two unique physical sides before global path search. The connector-facing side is excluded. The assignment prefers a side pointing naturally toward the remote endpoint, rejects a side whose mandatory 28 px stub is blocked, and penalizes a departure whose next local routing cell is occupied by an adjacent small junction. This prevents both branches from independently selecting the same locally attractive side and produces deterministic local fan-out such as `top + bottom` for an inner splice while an adjacent outer splice can use `top + right`.
+With **exactly two** globally routed external branches (normally a 3-wire splice including its straight anchor lead), an isolated connector-near splice may still use a direct low-degree physical-side assignment. When two such 3-wire splices are adjacent on the same connector side, however, **both** receive a compact `28 px` junction envelope on the radial side away from the connector. Each envelope supplies two unit-capacity landing ports on that same outward side, allowing both external branches to fan from the electrically common splice without forcing one branch through an artificial top/bottom detour.
+
+The two adjacent low-degree envelopes are shifted transversely by half a port pitch (`9 px`) **away from one another** before landing ports are generated. Thus an upper junction moves its fan-out lanes upward and the lower junction moves its lanes downward (with the equivalent rotation for other connector orientations). The shift keeps both mandatory 28 px outward stubs clear of the neighbouring splice body/keepout while retaining the logical splice point and straight anchor lead at their original positions. Same-splice convergence between the physical marker and these two landing ports is controlled internal junction geometry under R13.
 
 From **three external branches onward** (typically a 4-wire splice including its anchor), a connector-near junction envelope is generated even though the total branch count is below the free-splice high-degree threshold.
 
-When two connector-near junction envelopes are adjacent on the same connector side, each junction additionally reserves the transverse side that points toward the neighbouring junction. For example, if S1 is above S2 on the right side of a connector, S1 blocks `bottom` and S2 blocks `top`. Both high-degree junctions therefore fan away from one another instead of competing for the narrow region between them. The remaining external sides receive as many virtual landing ports as required by branch count.
+When two connector-near high-degree junction envelopes are adjacent on the same connector side, each junction additionally reserves the transverse side that points toward the neighbouring junction. For example, if S1 is above S2 on the right side of a connector, S1 blocks `bottom` and S2 blocks `top`. Both high-degree junctions therefore fan away from one another instead of competing for the narrow region between them. The remaining external sides receive as many virtual landing ports as required by branch count.
 
 This means a connector-near splice is not limited to three physical 12 px handles. The visible `S#` remains one point, while the nearby routing zone supplies the external landing capacity when required.
 
-The renderer still shows one splice identity (`S#`) and one logical junction point. Virtual landing ports and low-degree physical-side assignments are not domain objects, are not editable splice members and are regenerated deterministically.
+The renderer still shows one splice identity (`S#`) and one logical junction point. Virtual landing ports and low-degree radial fan-out zones are not domain objects, are not editable splice members and are regenerated deterministically.
 
 ## 3. Global objective order
 
@@ -191,14 +193,14 @@ The planner shall:
 2. construct deterministic endpoint-label and splice-label keepouts,
 3. derive mandatory terminal straight distances,
 4. derive connector-near radial stagger placement before routing,
-5. reserve the connector-facing side for the straight anchor lead and jointly assign low-degree 3-wire connector-near branches to unique viable physical sides,
-6. derive all splice fan-in/junction envelopes and virtual landing ports where R13 requires them,
-7. assign high-degree external branches to landing ports deterministically **against all bodies, labels and foreign junction envelopes**, rejecting locally blocked mandatory terminal stubs before expensive path search,
+5. reserve the connector-facing side for the straight anchor lead and detect adjacent low-degree connector-near splice pairs,
+6. derive compact paired 3-wire radial fan-out zones or scalable high-degree fan-in/junction envelopes and their virtual landing ports where R13 requires them,
+7. assign external branches to landing ports deterministically **against all bodies, labels and foreign junction envelopes**, rejecting locally blocked mandatory terminal stubs before expensive path search,
 8. create useful X/Y corridor candidates from terminals, obstacle boundaries and already reserved wire corridors,
 9. reject hard-constraint violations before scoring,
 10. retain bounded alternative routes and/or use bounded backtracking/beam search so a locally attractive early wire can be changed when it blocks later wires,
 11. optimize globally in the objective order above,
-12. append controlled same-junction convergence geometry inside a splice fan-in envelope after external route validation,
+12. append controlled same-junction convergence geometry inside a splice fan-in/fan-out envelope after external route validation,
 13. return a complete explicit polyline or `UNROUTED` for every requested wire.
 
 The candidate/search implementation may evolve toward a fuller Manhattan visibility/grid graph without changing this contract.
@@ -242,7 +244,7 @@ The suite must cover at minimum:
 - routing stability when a previous valid route still fits,
 - connector-near and free-splice fan-out,
 - adjacent connector-near splices with two-grid radial lane separation,
-- adjacent 3-wire connector-near splices with two jointly assigned external physical sides each,
+- adjacent 3-wire connector-near splices with two outward landing ports each and transverse fan-out separation,
 - connector-facing side excluded from low-degree external routing,
 - connector-near splice with three external branches plus straight anchor lead,
 - adjacent connector-near 4-wire junctions with three external branches each,
@@ -258,7 +260,7 @@ The suite must cover at minimum:
 
 ## 9. Persistence
 
-Connector and free-splice positions are persistent viewer state. Generated route polylines, connector-near radial stagger, low-degree physical-side assignment, fan-in envelopes and virtual landing ports are derived state and are regenerated deterministically; they are not persisted in M0.2.
+Connector and free-splice positions are persistent viewer state. Generated route polylines, connector-near radial stagger, low-degree radial fan-out zones, fan-in envelopes and virtual landing ports are derived state and are regenerated deterministically; they are not persisted in M0.2.
 
 Manual locked waypoints/segments may be added later as explicit persistent routing constraints.
 
