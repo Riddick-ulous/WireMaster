@@ -111,8 +111,11 @@ interface EndLabelPosition {
 function endpointLabelPosition(x: number, y: number, position: Position): EndLabelPosition {
   if (position === Position.Left) return { x: x - 10, y: y - 5, anchor: 'end', rotation: 0 };
   if (position === Position.Right) return { x: x + 10, y: y - 5, anchor: 'start', rotation: 0 };
-  if (position === Position.Top) return { x: x + 5, y: y - 10, anchor: 'start', rotation: -90 };
-  return { x: x - 5, y: y + 10, anchor: 'start', rotation: 90 };
+  // Keep labels beside vertical breakout stubs rather than directly on top of
+  // the wire. The lateral offset is intentionally larger than the label's
+  // outline/stroke so highlighted wires stay visually separate as well.
+  if (position === Position.Top) return { x: x - 10, y: y - 10, anchor: 'start', rotation: -90 };
+  return { x: x + 10, y: y + 10, anchor: 'start', rotation: 90 };
 }
 
 function orthogonalPath(
