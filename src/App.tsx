@@ -6,7 +6,9 @@ import {
   addGenericConnector,
   applyPinEdits,
   createConnectorSpliceForNet,
+  createConnectorSpliceFromSplice,
   createFreeSpliceForNet,
+  endpointKey,
   setConnectorLabel,
   type PinEdit,
 } from './core/project';
@@ -14,7 +16,7 @@ import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
 import { TransactionHistory, type HistoryState } from './core/transactions';
-import type { Project, UUID, ViewerRotation } from './core/model';
+import type { Project, UUID, ViewerRotation, WireEndpoint } from './core/model';
 
 export default function App() {
   const historyRef = useRef(new TransactionHistory<Project>(createDemoProject(), 30));
@@ -85,11 +87,73 @@ export default function App() {
 
   const createConnectorNearSplice = useCallback((pinId: UUID) => {
     try {
-      commit((draft) => { createConnectorSpliceForNet(draft, harness.id, pinId); });
+      const currentProject = historyRef.current.value;
+      const currentHarness = currentProject.subHarnesses.find((item) => item.id === activeHarnessId);
+      if (!currentHarness) throw new Error(`Unknown harness ${activeHarnessId}`);
+      const connector = currentHarness.connectors.find((item) => item.pins.some((pin) => pin.id === pinId));
+      const pin = connector?.pins.find((item) => item.id === pinId);
+      if (!connector || !pin) throw new Error(`Unknown pin ${pinId}`);
+      if (!pin.netId) throw new Error('Assign a net before creating a splice');
+
+      const existingTopology = currentHarness.splices.filter((splice) => splice.netId === pin.netId && splice.status !== 'ORPHANED');
+      if (!existingTopology.length) {
+        commit((draft) => { createConnectorSpliceForNet(draft, activeHarnessId, pinId); });
+        return;
+      }
+
+      const anchorEndpoint: WireEndpoint = { kind: 'pin', connectorId: connector.id, pinId };
+      const anchorKey = endpointKey(anchorEndpoint);
+      const upstreamCandidates = existingTopology.filter((splice) => splice.memberEndpoints.some((endpoint) => endpointKey(endpoint) === anchorKey));
+      if (!upstreamCandidates.length) {
+        throw new Error('This pin is not a direct branch of an existing splice. Select a pin that is currently connected to the upstream splice.');
+      }
+
+      let upstream = upstreamCandidates[0];
+      if (upstreamCandidates.length > 1) {
+        const answer = window.prompt(
+          `Select upstream splice for ${connector.displayId}/${pin.cavity}:\n${upstreamCandidates.map((splice) => splice.displayId).join(', ')}`,
+          upstream.displayId,
+        );
+        if (answer === null) return;
+        const selected = upstreamCandidates.find((splice) => splice.displayId.toLocaleLowerCase() === answer.trim().toLocaleLowerCase());
+        if (!selected) throw new Error(`Unknown upstream splice '${answer.trim()}'`);
+        upstream = selected;
+      }
+
+      const branchOptions = upstream.memberEndpoints.filter((endpoint) => endpointKey(endpoint) !== anchorKey);
+      const endpointLabel = (endpoint: WireEndpoint): string => {
+        if (endpoint.kind === 'splice') {
+          return currentHarness.splices.find((splice) => splice.id === endpoint.spliceId)?.displayId ?? `Splice ${endpoint.spliceId}`;
+        }
+        const branchConnector = currentHarness.connectors.find((item) => item.id === endpoint.connectorId);
+        const branchPin = branchConnector?.pins.find((item) => item.id === endpoint.pinId);
+        return `${branchConnector?.displayId ?? '?'} / cavity ${branchPin?.cavity ?? '?'}${branchPin?.pinName ? ` · ${branchPin.pinName}` : ''}`;
+      };
+
+      let branchesToMove: WireEndpoint[] = [];
+      if (branchOptions.length) {
+        const menu = branchOptions.map((endpoint, index) => `${index + 1}: ${endpointLabel(endpoint)}`).join('\n');
+        const answer = window.prompt(
+          `Create a new connector-near splice at ${connector.displayId}/${pin.cavity} from ${upstream.displayId}.\n\nMove additional branches by number, comma-separated. The anchor branch moves automatically.\n${menu}\n\nLeave empty to move only the anchor.`,
+          '',
+        );
+        if (answer === null) return;
+        const indexes = answer.trim()
+          ? [...new Set(answer.split(',').map((value) => Number.parseInt(value.trim(), 10)))]
+          : [];
+        if (indexes.some((index) => !Number.isInteger(index) || index < 1 || index > branchOptions.length)) {
+          throw new Error('Branch selection contains an invalid number');
+        }
+        branchesToMove = indexes.map((index) => branchOptions[index - 1]);
+      }
+
+      commit((draft) => {
+        createConnectorSpliceFromSplice(draft, activeHarnessId, upstream.id, pinId, branchesToMove);
+      });
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
     }
-  }, [commit, harness.id]);
+  }, [activeHarnessId, commit]);
 
   const createFreeSpliceForHighlightedNet = useCallback(() => {
     if (!highlightedNetId) return;
