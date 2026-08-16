@@ -356,13 +356,22 @@ function routingObstaclesForJunctions(obstacles: RouteObstacle[], geometries: Ma
   });
 }
 
+function withoutConnectorFacingSide(terminal: RouteTerminal, blockedSide: CardinalSide | undefined): RouteTerminal {
+  if (!blockedSide) return terminal;
+  const options = terminal.options.filter((option) => option.side !== blockedSide);
+  return options.length ? { nodeId: terminal.nodeId, options } : terminal;
+}
+
 export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: RouteObstacle[]): ExpandedSpliceRouting {
   const geometries = new Map<string, SpliceFanInGeometry>();
+  const connectorBlockedSides = new Map<string, CardinalSide>();
   for (const [nodeId, degree] of endpointDegrees(requests)) {
+    const blockedSide = blockedConnectorSide(nodeId, centerOfTerminal(degree.terminal), obstacles);
+    if (blockedSide) connectorBlockedSides.set(nodeId, blockedSide);
     const geometry = buildSpliceFanInGeometry(nodeId, degree.terminal, degree.count, obstacles);
     if (geometry) geometries.set(nodeId, geometry);
   }
-  if (!geometries.size) return { requests, obstacles, geometries };
+  if (!geometries.size && !connectorBlockedSides.size) return { requests, obstacles, geometries };
 
   const localObstacles = routingObstaclesForJunctions(obstacles, geometries);
   // Port assignment must see every foreign junction envelope. Otherwise a port
@@ -372,15 +381,19 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
   const junctionObstacles = [...geometries.values()].map((geometry) => geometry.envelope);
   const expandedObstacles = [...localObstacles, ...junctionObstacles];
   const assignments = assignLandingPorts(requests, expandedObstacles, geometries);
-  const expandedRequests = requests.map((request) => ({
-    ...request,
-    source: geometries.has(request.source.nodeId)
-      ? { nodeId: request.source.nodeId, options: [assignments.get(`${request.id}:source`) ?? geometries.get(request.source.nodeId)!.ports[0]] }
-      : request.source,
-    target: geometries.has(request.target.nodeId)
-      ? { nodeId: request.target.nodeId, options: [assignments.get(`${request.id}:target`) ?? geometries.get(request.target.nodeId)!.ports[0]] }
-      : request.target,
-  }));
+  const expandedRequests = requests.map((request) => {
+    const sourceGeometry = geometries.get(request.source.nodeId);
+    const targetGeometry = geometries.get(request.target.nodeId);
+    return {
+      ...request,
+      source: sourceGeometry
+        ? { nodeId: request.source.nodeId, options: [assignments.get(`${request.id}:source`) ?? sourceGeometry.ports[0]] }
+        : withoutConnectorFacingSide(request.source, connectorBlockedSides.get(request.source.nodeId)),
+      target: targetGeometry
+        ? { nodeId: request.target.nodeId, options: [assignments.get(`${request.id}:target`) ?? targetGeometry.ports[0]] }
+        : withoutConnectorFacingSide(request.target, connectorBlockedSides.get(request.target.nodeId)),
+    };
+  });
   return { requests: expandedRequests, obstacles: expandedObstacles, geometries };
 }
 
