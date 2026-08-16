@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ConnectorGrid } from './components/ConnectorGrid';
 import { ElectricalViewer, type WireRenderStyle } from './components/ElectricalViewer';
-import { addGenericConnector, applyPinEdits, setConnectorLabel, type PinEdit } from './core/project';
+import {
+  addGenericConnector,
+  applyPinEdits,
+  createConnectorSpliceForNet,
+  createFreeSpliceForNet,
+  setConnectorLabel,
+  type PinEdit,
+} from './core/project';
 import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
@@ -76,6 +83,27 @@ export default function App() {
     commit((draft) => setConnectorLabel(draft, connectorId, label));
   }, [commit]);
 
+  const createConnectorNearSplice = useCallback((pinId: UUID) => {
+    try {
+      commit((draft) => { createConnectorSpliceForNet(draft, harness.id, pinId); });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  }, [commit, harness.id]);
+
+  const createFreeSpliceForHighlightedNet = useCallback(() => {
+    if (!highlightedNetId) return;
+    try {
+      commit((draft) => {
+        const created = createFreeSpliceForNet(draft, harness.id, highlightedNetId);
+        const target = draft.subHarnesses.find((item) => item.id === harness.id)!;
+        target.viewerLayout.splicePositions[created.id] = { x: 390, y: 240 };
+      });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  }, [commit, harness.id, highlightedNetId]);
+
   const selectConnector = useCallback((id: UUID) => {
     setSelectedConnectorId(id);
     requestAnimationFrame(() => document.getElementById(`connector-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -137,7 +165,7 @@ export default function App() {
       <main className="workspace">
         <aside className="editor-pane">
           <div className="pane-title">
-            <div><strong>{harness.name}</strong><span>{harness.connectors.length} connectors · {harness.wires.filter((w) => w.status === 'ACTIVE').length} active wires</span></div>
+            <div><strong>{harness.name}</strong><span>{harness.connectors.length} connectors · {harness.splices.filter((s) => s.status !== 'ORPHANED').length} splices · {harness.wires.filter((w) => w.status === 'ACTIVE').length} active wires</span></div>
             <button onClick={() => commit((draft) => { const created = addGenericConnector(draft, harness.id, 4); const target = draft.subHarnesses.find((h) => h.id === harness.id)!; target.viewerLayout.connectorPositions[created.id] = { x: 120, y: 120 + harness.connectors.length * 80 }; target.viewerLayout.connectorRotations[created.id] = 0; })}>+ Connector</button>
           </div>
           <div className="connector-list">
@@ -146,11 +174,13 @@ export default function App() {
                 key={connector.id}
                 connector={connector}
                 nets={netOptions}
+                splices={harness.splices}
                 selected={connector.id === selectedConnectorId}
                 onSelect={() => setSelectedConnectorId(connector.id)}
                 onRename={(label) => renameConnector(connector.id, label)}
                 onEditPin={editPin}
                 onBulkEditPins={bulkEditPins}
+                onCreateSplice={createConnectorNearSplice}
               />
             ))}
             {!harness.connectors.length && <div className="empty-state">Add a connector to start the harness.</div>}
@@ -169,6 +199,13 @@ export default function App() {
                 <option value="">Highlight net…</option>
                 {netOptions.map((net) => <option key={net.id} value={net.id}>{net.name}</option>)}
               </select>
+              <button
+                disabled={!highlightedNetId}
+                title={highlightedNetId ? 'Create a free splice for the selected unresolved net' : 'Select a net first'}
+                onClick={createFreeSpliceForHighlightedNet}
+              >
+                + Free splice
+              </button>
             </div>
           </div>
           <div className="viewer-canvas">
@@ -182,6 +219,7 @@ export default function App() {
               onHighlightNet={setHighlightedNetId}
               onRotateConnector={rotateConnector}
               onLayoutChange={(connectorId, x, y) => commit((draft) => { const target = draft.subHarnesses.find((h) => h.id === harness.id)!; target.viewerLayout.connectorPositions[connectorId] = { x, y }; })}
+              onSpliceLayoutChange={(spliceId, x, y) => commit((draft) => { const target = draft.subHarnesses.find((h) => h.id === harness.id)!; target.viewerLayout.splicePositions[spliceId] = { x, y }; })}
             />
           </div>
         </section>
