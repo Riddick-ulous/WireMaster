@@ -47,6 +47,13 @@ jobs:
       - run: npm ci
       - name: Build Tauri desktop app
         run: npm run tauri build -- --no-bundle
+      - name: Emit resolved Cargo lock snapshot
+        if: always()
+        run: |
+          echo CARGO_LOCK_GZIP_BASE64_BEGIN
+          gzip -c src-tauri/Cargo.lock | base64 -w0
+          echo
+          echo CARGO_LOCK_GZIP_BASE64_END
 
   tauri-windows-build:
     needs: web-core
