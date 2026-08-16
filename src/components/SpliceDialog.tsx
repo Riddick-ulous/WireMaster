@@ -105,13 +105,16 @@ export function SpliceDialog({ project, harnessId, initialNetId, initialAnchorPi
 
   const net = project.nets.find((item) => item.id === netId);
   const newTopologyEndpoints = pinRefs.filter((item) => selectedKeys.has(endpointKey(item.endpoint))).map((item) => item.endpoint);
+  const selectedEndpointCount = placement === 'CONNECTOR' && anchorRef
+    ? new Set([...newTopologyEndpoints.map(endpointKey), endpointKey(anchorRef.endpoint)]).size
+    : newTopologyEndpoints.length;
   const firstTopologyProblem = !netId
     ? 'Select a net.'
     : pinRefs.length < 2
       ? 'This net needs at least two pins in the active sub-harness.'
       : placement === 'CONNECTOR' && !anchorRef
         ? 'Select the connector pin where the splice physically sits.'
-        : newTopologyEndpoints.length < 2
+        : selectedEndpointCount < 2
           ? 'Select at least two endpoints for the splice.'
           : null;
 
