@@ -128,12 +128,12 @@ export function buildSpliceFanInGeometry(
   if (!isSpliceTerminal(terminal)) return null;
   const logicalCenter = centerOfTerminal(terminal);
   const blockedSide = blockedConnectorSide(nodeId, logicalCenter, obstacles);
-  // A free splice has four usable physical sides and only needs an expanded
-  // landing envelope above that capacity. A connector-near splice loses its
-  // connector-facing side; as soon as two external branches exist we create a
-  // controlled three-sided junction zone instead of forcing both wires through
-  // the few remaining 12 px physical handles.
-  const needsEnvelope = blockedSide ? branchCount >= 2 : branchCount > 4;
+  // Free splices need expansion only above their four physical sides. A
+  // connector-near splice has three usable external sides because the anchor
+  // occupies the connector-facing direction. Two external branches still fit
+  // naturally after radial staggering; from three external branches onward we
+  // create the controlled three-sided junction zone.
+  const needsEnvelope = blockedSide ? branchCount >= 3 : branchCount > 4;
   if (!needsEnvelope) return null;
   const availableSides = SIDES.filter((side) => side !== blockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
