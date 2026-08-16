@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   longitudinalOverlapLength,
   materializeOrthogonalRoute,
+  minimumParallelRouteSpacing,
+  MIN_ROUTE_SPACING,
   planOrthogonalRoutes,
+  routeCrossesObstacle,
+  type RouteObstacle,
   type RouteRequest,
   type RouteTerminal,
 } from '../orthogonalRouter';
@@ -35,8 +39,8 @@ describe('orthogonal route planner', () => {
       id: `W${index + 1}`,
       source: fixedTerminal(`L${index}`, `lp${index}`, 'right', 180, 80 + index * 28),
       target: fixedTerminal(`R${index}`, `rp${index}`, 'left', 720, 100 + index * 28),
-      sourceBreakout: 30 + index * 18,
-      targetBreakout: 30 + index * 18,
+      sourceBreakout: 34 + index * 22,
+      targetBreakout: 34 + index * 22,
     }));
 
     const plans = planOrthogonalRoutes(requests);
@@ -44,6 +48,8 @@ describe('orthogonal route planner', () => {
     for (let left = 0; left < routes.length; left += 1) {
       for (let right = left + 1; right < routes.length; right += 1) {
         expect(longitudinalOverlapLength(routes[left], routes[right])).toBe(0);
+        const spacing = minimumParallelRouteSpacing(routes[left], routes[right]);
+        expect(spacing === Number.POSITIVE_INFINITY || spacing + 0.25 >= MIN_ROUTE_SPACING).toBe(true);
       }
     }
   });
@@ -60,8 +66,8 @@ describe('orthogonal route planner', () => {
       id: `W${index + 1}`,
       source: splice,
       target,
-      sourceBreakout: 18,
-      targetBreakout: 30 + index * 18,
+      sourceBreakout: 24,
+      targetBreakout: 34 + index * 22,
     }));
 
     const plans = planOrthogonalRoutes(requests);
@@ -73,21 +79,35 @@ describe('orthogonal route planner', () => {
     }
   });
 
+  it('treats a third connector keepout as a hard obstacle', () => {
+    const request: RouteRequest = {
+      id: 'W1',
+      source: fixedTerminal('C1', 'c1', 'right', 180, 180),
+      target: fixedTerminal('C2', 'c2', 'left', 820, 180),
+      sourceBreakout: 34,
+      targetBreakout: 34,
+    };
+    const obstacle: RouteObstacle = { nodeId: 'BLOCKER', x: 390, y: 90, width: 180, height: 180 };
+    const plans = planOrthogonalRoutes([request], [obstacle]);
+    const points = route(request, plans);
+    expect(routeCrossesObstacle(points, obstacle)).toBe(false);
+  });
+
   it('is deterministic for the same geometry', () => {
     const requests: RouteRequest[] = [
       {
         id: 'W1',
         source: fixedTerminal('C1', 'a', 'right', 180, 120),
         target: fixedTerminal('C2', 'b', 'left', 700, 360),
-        sourceBreakout: 30,
-        targetBreakout: 30,
+        sourceBreakout: 34,
+        targetBreakout: 34,
       },
       {
         id: 'W2',
         source: fixedTerminal('C3', 'c', 'right', 180, 360),
         target: fixedTerminal('C4', 'd', 'left', 700, 120),
-        sourceBreakout: 48,
-        targetBreakout: 48,
+        sourceBreakout: 56,
+        targetBreakout: 56,
       },
     ];
 
