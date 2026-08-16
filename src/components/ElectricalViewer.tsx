@@ -28,6 +28,9 @@ type ActivePinWire = WireInstance & { endpointA: PinEndpoint; endpointB: PinEndp
 export type WireRenderStyle = 'smooth' | 'orthogonal';
 
 const PIN_PITCH_PX = 28;
+const BREAKOUT_BASE_PX = 38;
+
+type EdgeEnd = 'source' | 'target';
 
 function isActivePinWire(wire: WireInstance): wire is ActivePinWire {
   return wire.status === 'ACTIVE' && wire.endpointA.kind === 'pin' && wire.endpointB.kind === 'pin';
@@ -44,29 +47,34 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
   const updateNodeInternals = useUpdateNodeInternals();
   const handlePosition = handlePositionForRotation(data.rotation);
   const horizontal = data.rotation === 90 || data.rotation === 270;
+  const titleAtBottom = data.rotation === 270;
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => updateNodeInternals(id));
     return () => cancelAnimationFrame(frame);
   }, [data.rotation, id, updateNodeInternals]);
 
+  const title = (
+    <div className={`viewer-connector-title ${titleAtBottom ? 'bottom' : 'top'}`}>
+      <span>{data.connector.displayId} · {data.connector.label}</span>
+      <button
+        type="button"
+        className="viewer-rotate nodrag nopan"
+        title="Rotate connector 90°"
+        aria-label={`Rotate ${data.connector.displayId} 90 degrees`}
+        onClick={(event) => {
+          event.stopPropagation();
+          data.onRotate(data.connector.id);
+        }}
+      >
+        ↻
+      </button>
+    </div>
+  );
+
   return (
     <div className={`viewer-connector rotation-${data.rotation} ${horizontal ? 'horizontal' : 'vertical'}`}>
-      <div className="viewer-connector-title">
-        <span>{data.connector.displayId} · {data.connector.label}</span>
-        <button
-          type="button"
-          className="viewer-rotate nodrag nopan"
-          title="Rotate connector 90°"
-          aria-label={`Rotate ${data.connector.displayId} 90 degrees`}
-          onClick={(event) => {
-            event.stopPropagation();
-            data.onRotate(data.connector.id);
-          }}
-        >
-          ↻
-        </button>
-      </div>
+      {!titleAtBottom && title}
       <div className="viewer-pins">
         {data.connector.pins.map((pin) => (
           <div className="viewer-pin" key={pin.id}>
@@ -81,6 +89,7 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
           </div>
         ))}
       </div>
+      {titleAtBottom && title}
     </div>
   );
 }
@@ -92,44 +101,82 @@ function outwardPoint(x: number, y: number, position: Position, distance: number
   return { x, y: y + distance };
 }
 
-function endpointLabelPosition(x: number, y: number, position: Position): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
-  if (position === Position.Left) return { x: x - 10, y: y - 5, anchor: 'end' };
-  if (position === Position.Right) return { x: x + 10, y: y - 5, anchor: 'start' };
-  if (position === Position.Top) return { x, y: y - 10, anchor: 'middle' };
-  return { x, y: y + 16, anchor: 'middle' };
+interface EndLabelPosition {
+  x: number;
+  y: number;
+  anchor: 'start' | 'middle' | 'end';
+  rotation: number;
+}
+
+function endpointLabelPosition(x: number, y: number, position: Position): EndLabelPosition {
+  if (position === Position.Left) return { x: x - 10, y: y - 5, anchor: 'end', rotation: 0 };
+  if (position === Position.Right) return { x: x + 10, y: y - 5, anchor: 'start', rotation: 0 };
+  if (position === Position.Top) return { x: x + 5, y: y - 10, anchor: 'start', rotation: -90 };
+  return { x: x - 5, y: y + 10, anchor: 'start', rotation: 90 };
 }
 
 function orthogonalPath(
   sourceX: number,
   sourceY: number,
   sourcePosition: Position,
+  sourceBreakout: number,
   targetX: number,
   targetY: number,
   targetPosition: Position,
-  laneOffset: number,
+  targetBreakout: number,
+  corridorOffset: number,
 ): string {
   const sourceHorizontal = sourcePosition === Position.Left || sourcePosition === Position.Right;
   const targetHorizontal = targetPosition === Position.Left || targetPosition === Position.Right;
+  const sourceOut = outwardPoint(sourceX, sourceY, sourcePosition, sourceBreakout);
+  const targetOut = outwardPoint(targetX, targetY, targetPosition, targetBreakout);
 
+  // Same-axis endpoints use a dedicated center corridor. Parallel wires of the
+  // same connector pair receive separate corridors at one-pin-pitch spacing.
   if (sourceHorizontal && targetHorizontal) {
-    const laneX = (sourceX + targetX) / 2 + laneOffset;
-    return `M ${sourceX} ${sourceY} L ${laneX} ${sourceY} L ${laneX} ${targetY} L ${targetX} ${targetY}`;
+    const corridorY = (sourceOut.y + targetOut.y) / 2 + corridorOffset;
+    return [
+      `M ${sourceX} ${sourceY}`,
+      `L ${sourceOut.x} ${sourceOut.y}`,
+      `L ${sourceOut.x} ${corridorY}`,
+      `L ${targetOut.x} ${corridorY}`,
+      `L ${targetOut.x} ${targetOut.y}`,
+      `L ${targetX} ${targetY}`,
+    ].join(' ');
   }
 
   if (!sourceHorizontal && !targetHorizontal) {
-    const laneY = (sourceY + targetY) / 2 + laneOffset;
-    return `M ${sourceX} ${sourceY} L ${sourceX} ${laneY} L ${targetX} ${laneY} L ${targetX} ${targetY}`;
+    const corridorX = (sourceOut.x + targetOut.x) / 2 + corridorOffset;
+    return [
+      `M ${sourceX} ${sourceY}`,
+      `L ${sourceOut.x} ${sourceOut.y}`,
+      `L ${corridorX} ${sourceOut.y}`,
+      `L ${corridorX} ${targetOut.y}`,
+      `L ${targetOut.x} ${targetOut.y}`,
+      `L ${targetX} ${targetY}`,
+    ].join(' ');
   }
 
-  const stubDistance = 34 + Math.abs(laneOffset);
-  const sourceOut = outwardPoint(sourceX, sourceY, sourcePosition, stubDistance);
-  const targetOut = outwardPoint(targetX, targetY, targetPosition, stubDistance);
-
+  // Perpendicular endpoints already have two independent connector-local
+  // breakout lanes. Connect those lanes with one right-angle corner: routes
+  // can cross at 90°, but cannot share a longitudinal segment for a pair.
   if (sourceHorizontal) {
-    return `M ${sourceX} ${sourceY} L ${sourceOut.x} ${sourceOut.y} L ${sourceOut.x} ${targetOut.y} L ${targetOut.x} ${targetOut.y} L ${targetX} ${targetY}`;
+    return [
+      `M ${sourceX} ${sourceY}`,
+      `L ${sourceOut.x} ${sourceOut.y}`,
+      `L ${targetOut.x} ${sourceOut.y}`,
+      `L ${targetOut.x} ${targetOut.y}`,
+      `L ${targetX} ${targetY}`,
+    ].join(' ');
   }
 
-  return `M ${sourceX} ${sourceY} L ${sourceOut.x} ${sourceOut.y} L ${targetOut.x} ${sourceOut.y} L ${targetOut.x} ${targetOut.y} L ${targetX} ${targetY}`;
+  return [
+    `M ${sourceX} ${sourceY}`,
+    `L ${sourceOut.x} ${sourceOut.y}`,
+    `L ${sourceOut.x} ${targetOut.y}`,
+    `L ${targetOut.x} ${targetOut.y}`,
+    `L ${targetX} ${targetY}`,
+  ].join(' ');
 }
 
 function WireEdge({
@@ -147,14 +194,26 @@ function WireEdge({
   interactionWidth,
 }: EdgeProps) {
   const routing = data?.routing === 'orthogonal' ? 'orthogonal' : 'smooth';
-  const laneOffset = typeof data?.laneOffset === 'number' ? data.laneOffset : 0;
+  const corridorOffset = typeof data?.corridorOffset === 'number' ? data.corridorOffset : 0;
+  const sourceBreakout = typeof data?.sourceBreakout === 'number' ? data.sourceBreakout : BREAKOUT_BASE_PX;
+  const targetBreakout = typeof data?.targetBreakout === 'number' ? data.targetBreakout : BREAKOUT_BASE_PX;
   const wireInfo = typeof data?.wireInfo === 'string' ? data.wireInfo : '';
   const labelFill = typeof data?.labelFill === 'string' ? data.labelFill : '#aeb8c6';
   const labelOpacity = typeof data?.labelOpacity === 'number' ? data.labelOpacity : 1;
 
   let path: string;
   if (routing === 'orthogonal') {
-    path = orthogonalPath(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, laneOffset);
+    path = orthogonalPath(
+      sourceX,
+      sourceY,
+      sourcePosition,
+      sourceBreakout,
+      targetX,
+      targetY,
+      targetPosition,
+      targetBreakout,
+      corridorOffset,
+    );
   } else {
     [path] = getBezierPath({
       sourceX,
@@ -185,6 +244,7 @@ function WireEdge({
             x={sourceLabel.x}
             y={sourceLabel.y}
             textAnchor={sourceLabel.anchor}
+            transform={sourceLabel.rotation ? `rotate(${sourceLabel.rotation} ${sourceLabel.x} ${sourceLabel.y})` : undefined}
             fill={labelFill}
             className="wire-end-label"
           >
@@ -194,6 +254,7 @@ function WireEdge({
             x={targetLabel.x}
             y={targetLabel.y}
             textAnchor={targetLabel.anchor}
+            transform={targetLabel.rotation ? `rotate(${targetLabel.rotation} ${targetLabel.x} ${targetLabel.y})` : undefined}
             fill={labelFill}
             className="wire-end-label"
           >
@@ -216,7 +277,7 @@ function connectorPairKey(wire: ActivePinWire): string {
   return [wire.endpointA.connectorId, wire.endpointB.connectorId].sort().join('|');
 }
 
-function orthogonalLaneOffsets(wires: ActivePinWire[]): Map<UUID, number> {
+function corridorOffsets(wires: ActivePinWire[]): Map<UUID, number> {
   const groups = new Map<string, ActivePinWire[]>();
   for (const wire of wires) {
     const key = connectorPairKey(wire);
@@ -231,6 +292,41 @@ function orthogonalLaneOffsets(wires: ActivePinWire[]): Map<UUID, number> {
     const center = (group.length - 1) / 2;
     group.forEach((wire, index) => {
       result.set(wire.id, (index - center) * PIN_PITCH_PX);
+    });
+  }
+  return result;
+}
+
+function breakoutKey(wireId: UUID, end: EdgeEnd): string {
+  return `${wireId}:${end}`;
+}
+
+function connectorBreakouts(wires: ActivePinWire[], connectors: ConnectorInstance[]): Map<string, number> {
+  const entriesByConnector = new Map<UUID, Array<{ wire: ActivePinWire; end: EdgeEnd; pinIndex: number }>>();
+  const connectorById = new Map(connectors.map((connector) => [connector.id, connector]));
+
+  for (const wire of wires) {
+    const endpoints: Array<{ endpoint: PinEndpoint; end: EdgeEnd }> = [
+      { endpoint: wire.endpointA, end: 'source' },
+      { endpoint: wire.endpointB, end: 'target' },
+    ];
+
+    for (const { endpoint, end } of endpoints) {
+      const connector = connectorById.get(endpoint.connectorId);
+      if (!connector) continue;
+      const pinIndex = Math.max(0, connector.pins.findIndex((pin) => pin.id === endpoint.pinId));
+      const entries = entriesByConnector.get(connector.id) ?? [];
+      entries.push({ wire, end, pinIndex });
+      entriesByConnector.set(connector.id, entries);
+    }
+  }
+
+  const result = new Map<string, number>();
+  for (const entries of entriesByConnector.values()) {
+    entries.sort((left, right) => left.pinIndex - right.pinIndex
+      || left.wire.displayId.localeCompare(right.wire.displayId, undefined, { numeric: true }));
+    entries.forEach((entry, index) => {
+      result.set(breakoutKey(entry.wire.id, entry.end), BREAKOUT_BASE_PX + index * PIN_PITCH_PX);
     });
   }
   return result;
@@ -275,7 +371,8 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
   }, [desiredNodes, setNodes]);
 
   const activeWires = useMemo(() => harness.wires.filter(isActivePinWire), [harness.wires]);
-  const laneOffsets = useMemo(() => orthogonalLaneOffsets(activeWires), [activeWires]);
+  const routeCorridors = useMemo(() => corridorOffsets(activeWires), [activeWires]);
+  const breakouts = useMemo(() => connectorBreakouts(activeWires, harness.connectors), [activeWires, harness.connectors]);
 
   const edges = useMemo<Edge[]>(() => activeWires.map((wire) => {
     const wireClass = wireClasses.find((item) => item.id === wire.wireClassId);
@@ -298,13 +395,15 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       data: {
         netId: wire.netId,
         routing: wireRenderStyle,
-        laneOffset: laneOffsets.get(wire.id) ?? 0,
+        corridorOffset: routeCorridors.get(wire.id) ?? 0,
+        sourceBreakout: breakouts.get(breakoutKey(wire.id, 'source')) ?? BREAKOUT_BASE_PX,
+        targetBreakout: breakouts.get(breakoutKey(wire.id, 'target')) ?? BREAKOUT_BASE_PX,
         wireInfo: `${wire.displayId} · ${gauge ?? '—'} · ${colorText}`,
         labelFill: highlighted ? '#fff' : '#aeb8c6',
         labelOpacity: dimmed ? 0.22 : 0.9,
       },
     };
-  }), [activeWires, highlightedNetId, laneOffsets, wireClasses, wireRenderStyle]);
+  }), [activeWires, breakouts, highlightedNetId, routeCorridors, wireClasses, wireRenderStyle]);
 
   return (
     <ReactFlow<ConnectorNode>
