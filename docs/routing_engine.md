@@ -58,19 +58,21 @@ The label never migrates to a later segment to make routing easier. If the requi
 
 The visible splice annotation (`S# · nW`) is deterministic annotation geometry and owns a padded hard keepout. Routed wires may not pass through splice text.
 
+The label must be offset from the splice routing baseline; displaying the label may not consume the only usable terminal direction of the splice.
+
 ### R9 No longitudinal overlap between wires
 
 Two different wires may never share a collinear segment for positive length.
 
 ### R10 Minimum parallel wire spacing
 
-Parallel wire segments whose projected extents overlap must have at least `MIN_WIRE_SPACING = 18 px` centerline distance, except for deliberate common electrical junction geometry at the same splice endpoint.
+Parallel wire segments whose projected extents overlap must have at least `MIN_WIRE_SPACING = 18 px` centerline distance, except for deliberate common electrical junction geometry inside the fan-in envelope of the same splice.
 
 ### R11 Wire crossings
 
 Different wires may cross only as a true 90-degree crossing. T-junction touching, endpoint touching between unrelated wires, collinear touching/overlap, or ambiguous electrical-looking contact is forbidden.
 
-A valid crossing must also be at least `MIN_CROSSING_TO_BEND = 28 px` away from the nearest bend, connector terminal, splice/junction terminal or route endpoint on both crossing wires.
+A valid crossing must also be at least `MIN_CROSSING_TO_BEND = 28 px` away from the nearest bend, connector terminal, splice/junction landing port or route endpoint on both crossing wires.
 
 Crossings are permitted only when necessary and remain strongly discouraged by the global objective function.
 
@@ -79,6 +81,28 @@ Crossings are permitted only when necessary and remain strongly discouraged by t
 If no valid route exists, the routing result is `UNROUTED`. The viewer must not substitute an older local Manhattan path, Bézier path, or any other geometry that violates the contract.
 
 An electrically `ACTIVE` wire may therefore be graphically `UNROUTED` without changing `WireInstance.status`.
+
+### R13 Scalable splice fan-in / fan-out envelope
+
+A splice remains exactly one logical electrical junction regardless of branch count. The viewer must not create additional electrical splice points merely to gain graphical routing capacity.
+
+For a splice with more than four globally routed branches, the router derives a scalable routing envelope with virtual landing ports. The envelope is layout-only derived state and is not persisted.
+
+Initial constants at viewer scale 1.0:
+
+- `SPLICE_PORT_PITCH = 18 px`,
+- `SPLICE_FANIN_MIN_LENGTH = 28 px`,
+- `SPLICE_FANIN_PADDING = 14 px`.
+
+Normal routing hard constraints apply from every external wire up to its assigned landing port. Each landing port has unit capacity: unrelated external branches may not longitudinally overlap on their approach and must maintain normal spacing.
+
+Inside the fan-in envelope, branches belonging to that same splice may converge in a controlled orthogonal junction fan to the one logical splice point. This internal junction geometry is the only exception to normal wire-wire spacing, longitudinal-overlap and minimum-bend-spacing rules because every coincident segment there represents the same intentional electrical node. It must not be counted as a wire crossing.
+
+The internal convergence exception never applies outside the splice envelope and never permits a wire belonging to another electrical node to enter the envelope.
+
+Free splices distribute landing ports across all four sides. Connector-near splices detect the connector-facing side and expand the landing envelope away from the connector; the connector-facing side is not required as an external landing side. Sufficient spare landing capacity shall be created so a label or local obstacle does not make a reasonable high-branch-count splice unroutable solely because one candidate port is blocked.
+
+The renderer still shows one splice identity (`S#`) and one logical junction point. Virtual landing ports are not domain objects, are not editable splice members and are regenerated deterministically.
 
 ## 3. Global objective order
 
@@ -97,6 +121,8 @@ The result must be deterministic for identical input geometry. Wire display ID i
 ## 4. Rendering contract
 
 The router returns the complete explicit polyline. The renderer does not reconstruct a different route from `axis/lane` hints.
+
+For a high-degree splice, the returned render polyline includes the controlled internal convergence from the selected virtual landing port to the physical/logical splice point. The router reserves and collision-checks the external portion; the internal fan-in portion is governed by R13.
 
 ### 4.1 90-degree mode
 
@@ -131,11 +157,13 @@ The planner shall:
 1. measure connector/splice rectangles,
 2. construct deterministic endpoint-label and splice-label keepouts,
 3. derive mandatory terminal straight distances,
-4. create useful X/Y corridor candidates from terminals, obstacle boundaries and already reserved wire corridors,
-5. reject hard-constraint violations before scoring,
-6. retain bounded alternative routes and/or use bounded backtracking/beam search so a locally attractive early wire can be changed when it blocks later wires,
-7. optimize globally in the objective order above,
-8. return a complete explicit polyline or `UNROUTED` for every requested wire.
+4. derive scalable splice fan-in envelopes and virtual landing ports for high-degree splices,
+5. create useful X/Y corridor candidates from terminals, obstacle boundaries and already reserved wire corridors,
+6. reject hard-constraint violations before scoring,
+7. retain bounded alternative routes and/or use bounded backtracking/beam search so a locally attractive early wire can be changed when it blocks later wires,
+8. optimize globally in the objective order above,
+9. append controlled same-junction convergence geometry inside a splice fan-in envelope after external route validation,
+10. return a complete explicit polyline or `UNROUTED` for every requested wire.
 
 The candidate/search implementation may evolve toward a fuller Manhattan visibility/grid graph without changing this contract.
 
@@ -166,17 +194,20 @@ The suite must cover at minimum:
 - fixed connector-pin label keepouts,
 - splice-label keepouts,
 - first bend only after full label clearance,
-- no bend closer than 28 px to any terminal,
-- no two bends separated by less than 28 px,
+- no bend closer than 28 px to any normal terminal/landing port,
+- no two normal routing bends separated by less than 28 px,
 - no 180-degree U-turn,
 - no self-intersection/self-overlap,
-- no longitudinal overlap between different wires,
-- at least 18 px parallel wire spacing,
+- no longitudinal overlap between different wires outside a common splice fan-in envelope,
+- at least 18 px parallel wire spacing outside a common splice fan-in envelope,
 - only true 90-degree crossings,
 - at least 28 px crossing-to-bend/terminal distance,
 - deterministic output,
 - routing stability when a previous valid route still fits,
 - connector-near and free-splice fan-out,
+- adjacent 3-wire connector-near splices,
+- scalable 6-wire splice fan-in,
+- scalable 12-wire splice fan-in with one logical junction,
 - connector rotations 0/90/180/270 degrees,
 - simplified preview followed by contract-valid committed reroute,
 - explicit `UNROUTED` with no unsafe rendered fallback,
@@ -185,7 +216,7 @@ The suite must cover at minimum:
 
 ## 9. Persistence
 
-Connector and free-splice positions are persistent viewer state. Generated route polylines are derived state and are regenerated deterministically; they are not persisted in M0.2.
+Connector and free-splice positions are persistent viewer state. Generated route polylines, fan-in envelopes and virtual landing ports are derived state and are regenerated deterministically; they are not persisted in M0.2.
 
 Manual locked waypoints/segments may be added later as explicit persistent routing constraints.
 
