@@ -236,6 +236,23 @@ export function createFreeSplice(
   return splice;
 }
 
+export function createFreeSpliceForNet(project: Project, harnessId: UUID, netId: UUID): SpliceInstance {
+  const harness = harnessById(project, harnessId);
+  if (!project.nets.some((net) => net.id === netId)) throw new Error(`Unknown net ${netId}`);
+  if (harness.splices.some((splice) => splice.netId === netId && splice.status !== 'ORPHANED')) {
+    throw new Error('This net already has splice topology. Extend it by explicitly selecting the upstream splice and branches.');
+  }
+
+  const members: PinEndpoint[] = [];
+  for (const connector of harness.connectors) {
+    for (const pin of connector.pins) {
+      if (pin.netId === netId) members.push({ kind: 'pin', connectorId: connector.id, pinId: pin.id });
+    }
+  }
+  if (members.length < 2) throw new Error('A free splice needs at least two pins on the selected net');
+  return createFreeSplice(project, harnessId, netId, members);
+}
+
 export function createConnectorSpliceFromSplice(
   project: Project,
   harnessId: UUID,
