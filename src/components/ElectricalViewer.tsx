@@ -163,7 +163,12 @@ function compactPath(points: Array<{ x: number; y: number }>): string {
       const c = compact[compact.length - 1];
       const sameX = Math.abs(a.x - b.x) < 0.01 && Math.abs(b.x - c.x) < 0.01;
       const sameY = Math.abs(a.y - b.y) < 0.01 && Math.abs(b.y - c.y) < 0.01;
-      if (!sameX && !sameY) break;
+      const sameDirection = sameX
+        ? (b.y - a.y) * (c.y - b.y) >= -0.01
+        : sameY
+          ? (b.x - a.x) * (c.x - b.x) >= -0.01
+          : false;
+      if (!sameDirection) break;
       compact.splice(compact.length - 2, 1);
     }
   }
