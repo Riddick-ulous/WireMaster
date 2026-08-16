@@ -13,7 +13,7 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
-import { CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX } from './connectorNearSpliceLayout';
+import { CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX, CONNECTOR_SPLICE_STAGGER_PX, PIN_PITCH_PX } from './connectorNearSpliceLayout';
 
 export const SPLICE_PORT_PITCH = 18;
 export const SPLICE_FANIN_MIN_LENGTH = 28;
@@ -23,6 +23,8 @@ export const SPLICE_FANIN_PADDING = 14;
 // deterministic margin for that second lane. This remains a layout heuristic
 // until junction placement is passed explicitly as terminal metadata.
 const CONNECTOR_NEAR_THRESHOLD = 140;
+const ADJACENT_SPLICE_TRANSVERSE_LIMIT = PIN_PITCH_PX * 1.5;
+const ADJACENT_SPLICE_RADIAL_LIMIT = CONNECTOR_SPLICE_STAGGER_PX + PIN_PITCH_PX;
 const FAN_KEY = '|fanin:';
 const BLOCKED_PORT_COST = 1_000_000;
 const OPPOSITE_SIDE_COST = 1_200;
@@ -35,6 +37,7 @@ export interface SpliceFanInGeometry {
   logicalCenter: RoutePoint;
   envelope: RouteObstacle;
   blockedSide: CardinalSide | null;
+  secondaryBlockedSide: CardinalSide | null;
   availableSides: CardinalSide[];
   ports: RouteTerminalOption[];
   physicalPorts: Map<CardinalSide, RouteTerminalOption>;
@@ -52,6 +55,11 @@ interface IncidentBranch {
   other: RouteTerminal;
 }
 
+interface ConnectorReference {
+  obstacle: RouteObstacle;
+  distance: number;
+}
+
 function isSpliceTerminal(terminal: RouteTerminal): boolean {
   if (terminal.options.length < 4) return false;
   return SIDES.every((side) => terminal.options.some((option) => option.side === side));
@@ -63,6 +71,10 @@ function centerOfTerminal(terminal: RouteTerminal): RoutePoint {
     x: terminal.options.reduce((sum, option) => sum + option.point.x, 0) / terminal.options.length,
     y: terminal.options.reduce((sum, option) => sum + option.point.y, 0) / terminal.options.length,
   };
+}
+
+function obstacleCenter(obstacle: RouteObstacle): RoutePoint {
+  return { x: obstacle.x + obstacle.width / 2, y: obstacle.y + obstacle.height / 2 };
 }
 
 function rawRectDistance(point: RoutePoint, obstacle: RouteObstacle): number {
@@ -89,7 +101,7 @@ function sideTowardObstacle(point: RoutePoint, obstacle: RouteObstacle): Cardina
   return point.y > bottom ? 'top' : 'bottom';
 }
 
-function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: RouteObstacle[]): CardinalSide | null {
+function nearestConnector(nodeId: string, center: RoutePoint, obstacles: RouteObstacle[]): ConnectorReference | null {
   const connectorLike = obstacles
     .filter((obstacle) => (obstacle.kind === 'node' || obstacle.kind === undefined)
       && obstacle.nodeId !== nodeId
@@ -97,8 +109,51 @@ function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: Rou
     .map((obstacle) => ({ obstacle, distance: rawRectDistance(center, obstacle) }))
     .sort((a, b) => a.distance - b.distance);
   const nearest = connectorLike[0];
-  if (!nearest || nearest.distance > CONNECTOR_NEAR_THRESHOLD) return null;
-  return sideTowardObstacle(center, nearest.obstacle);
+  return nearest && nearest.distance <= CONNECTOR_NEAR_THRESHOLD ? nearest : null;
+}
+
+function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: RouteObstacle[]): CardinalSide | null {
+  const nearest = nearestConnector(nodeId, center, obstacles);
+  return nearest ? sideTowardObstacle(center, nearest.obstacle) : null;
+}
+
+/**
+ * Adjacent connector-near splices are radially staggered. The outer splice must
+ * not send a mandatory 28 px terminal stub transversely back toward the inner
+ * splice: that creates an unavoidable near-junction crossing with the inner
+ * splice's outward branch. Detect the nearer-to-connector small splice and
+ * reserve the transverse side facing it on the outer junction only.
+ */
+function secondaryBlockedNeighborSide(
+  nodeId: string,
+  center: RoutePoint,
+  connector: ConnectorReference | null,
+  primaryBlockedSide: CardinalSide | null,
+  obstacles: RouteObstacle[],
+): CardinalSide | null {
+  if (!connector || !primaryBlockedSide) return null;
+  const horizontalConnector = primaryBlockedSide === 'left' || primaryBlockedSide === 'right';
+  const candidates = obstacles
+    .filter((obstacle) => (obstacle.kind === 'node' || obstacle.kind === undefined)
+      && obstacle.nodeId !== nodeId
+      && obstacle.nodeId !== connector.obstacle.nodeId
+      && obstacle.width < 40 && obstacle.height < 40)
+    .map((obstacle) => {
+      const otherCenter = obstacleCenter(obstacle);
+      const otherConnectorDistance = rawRectDistance(otherCenter, connector.obstacle);
+      const radialDelta = Math.abs(otherConnectorDistance - connector.distance);
+      const transverseDelta = horizontalConnector ? Math.abs(otherCenter.y - center.y) : Math.abs(otherCenter.x - center.x);
+      return { obstacle, otherCenter, otherConnectorDistance, radialDelta, transverseDelta };
+    })
+    .filter((item) => item.otherConnectorDistance + 0.25 < connector.distance
+      && item.radialDelta <= ADJACENT_SPLICE_RADIAL_LIMIT
+      && item.transverseDelta <= ADJACENT_SPLICE_TRANSVERSE_LIMIT)
+    .sort((a, b) => manhattan(center, a.otherCenter) - manhattan(center, b.otherCenter));
+
+  const inner = candidates[0];
+  if (!inner) return null;
+  if (horizontalConnector) return inner.otherCenter.y < center.y ? 'top' : 'bottom';
+  return inner.otherCenter.x < center.x ? 'left' : 'right';
 }
 
 function envelopeRect(center: RoutePoint, size: number, blockedSide: CardinalSide | null): RouteObstacle {
@@ -132,10 +187,12 @@ export function buildSpliceFanInGeometry(
 ): SpliceFanInGeometry | null {
   if (!isSpliceTerminal(terminal)) return null;
   const logicalCenter = centerOfTerminal(terminal);
-  const blockedSide = blockedConnectorSide(nodeId, logicalCenter, obstacles);
+  const connector = nearestConnector(nodeId, logicalCenter, obstacles);
+  const blockedSide = connector ? sideTowardObstacle(logicalCenter, connector.obstacle) : null;
   const needsEnvelope = blockedSide ? branchCount >= 3 : branchCount > 4;
   if (!needsEnvelope) return null;
-  const availableSides = SIDES.filter((side) => side !== blockedSide);
+  const secondaryBlockedSide = secondaryBlockedNeighborSide(nodeId, logicalCenter, connector, blockedSide, obstacles);
+  const availableSides = SIDES.filter((side) => side !== blockedSide && side !== secondaryBlockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
   const portsPerSide = basePerSide + (blockedSide && branchCount > availableSides.length * 2 ? 1 : 0);
   const size = Math.max(
@@ -160,7 +217,7 @@ export function buildSpliceFanInGeometry(
       ports.push({ key: `${physical.key}${FAN_KEY}${index}`, side, point });
     }
   }
-  return { nodeId, logicalCenter, envelope, blockedSide, availableSides, ports, physicalPorts };
+  return { nodeId, logicalCenter, envelope, blockedSide, secondaryBlockedSide, availableSides, ports, physicalPorts };
 }
 
 function endpointDegrees(requests: RouteRequest[]): Map<string, { count: number; terminal: RouteTerminal }> {
