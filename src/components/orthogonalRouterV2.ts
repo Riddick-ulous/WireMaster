@@ -2,13 +2,14 @@ import {
   MIN_BEND_SPACING,
   MIN_WIRE_SPACING,
   buildCandidate,
-  compareCandidateMetric,
   manhattan,
   outward,
   rectForObstacle,
   routeSegments,
   samePoint,
+  segmentCrossesObstacle,
   type CandidateMetric,
+  type CardinalSide,
   type OrthogonalRouteResult,
   type PlannedCandidate,
   type ReservedRoute,
@@ -16,10 +17,11 @@ import {
   type RoutePoint,
   type RouteRequest,
   type RouteTerminal,
+  type RouteTerminalOption,
 } from './routingGeometry';
 import { expandSpliceFanInRouting, finalizeSpliceFanInRoutes } from './spliceFanIn';
 
-interface BatchMetric { unrouted: number; crossings: number; churn: number; bends: number; length: number }
+interface BatchMetric { unrouted: number; crossings: number; churn: number; natural: number; bends: number; length: number }
 interface PlannedSet { routes: Map<string, OrthogonalRouteResult>; metric: BatchMetric }
 interface BeamState { routes: Map<string, OrthogonalRouteResult>; reserved: ReservedRoute[]; metric: BatchMetric }
 
@@ -33,17 +35,101 @@ const BEAM_WIDTH = 8;
 const CANDIDATES_PER_BEAM_STATE = 8;
 const RIPUP_CANDIDATE_LIMIT = 12;
 const RIPUP_MAX_PASSES = 3;
+const CRAMPED_DEPARTURE_COST = 2;
+const ORTHOGONAL_DEPARTURE_COST = 1;
+const OPPOSITE_DEPARTURE_COST = 3;
 
-function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
+function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, natural: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
-  return { unrouted: batch.unrouted, crossings: batch.crossings + metric.crossings, churn: batch.churn + metric.churn, bends: batch.bends + metric.bends, length: batch.length + metric.length };
+  return {
+    unrouted: batch.unrouted,
+    crossings: batch.crossings + metric.crossings,
+    churn: batch.churn + metric.churn,
+    natural: batch.natural + metric.natural,
+    bends: batch.bends + metric.bends,
+    length: batch.length + metric.length,
+  };
 }
 function compareBatch(left: BatchMetric, right: BatchMetric): number {
   if (left.unrouted !== right.unrouted) return left.unrouted - right.unrouted;
   if (left.crossings !== right.crossings) return left.crossings - right.crossings;
   if (left.churn !== right.churn) return left.churn - right.churn;
+  if (left.natural !== right.natural) return left.natural - right.natural;
   if (left.bends !== right.bends) return left.bends - right.bends;
   return left.length - right.length;
+}
+
+function compareLocalMetric(left: CandidateMetric, right: CandidateMetric): number {
+  if (left.crossings !== right.crossings) return left.crossings - right.crossings;
+  if (left.churn !== right.churn) return left.churn - right.churn;
+  if (left.natural !== right.natural) return left.natural - right.natural;
+  if (left.bends !== right.bends) return left.bends - right.bends;
+  return left.length - right.length;
+}
+
+function terminalCenter(terminal: RouteTerminal): RoutePoint {
+  if (!terminal.options.length) return { x: 0, y: 0 };
+  return {
+    x: terminal.options.reduce((sum, option) => sum + option.point.x, 0) / terminal.options.length,
+    y: terminal.options.reduce((sum, option) => sum + option.point.y, 0) / terminal.options.length,
+  };
+}
+
+function oppositeSide(side: CardinalSide): CardinalSide {
+  if (side === 'left') return 'right';
+  if (side === 'right') return 'left';
+  if (side === 'top') return 'bottom';
+  return 'top';
+}
+
+function preferredDepartureSide(from: RoutePoint, to: RoutePoint): CardinalSide {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+  return dy < 0 ? 'top' : 'bottom';
+}
+
+/**
+ * Multi-side terminals are splice/junction terminals. A formally valid first
+ * 28 px run can still be a poor departure when the next routing cell is already
+ * occupied by a neighbouring node: the wire then has to make an immediate
+ * dogleg around that node. Prefer a clear side that points toward the remote
+ * endpoint, but allow an orthogonal side when it avoids such local congestion.
+ * Single-option connector terminals are unaffected.
+ */
+function terminalDeparturePenalty(
+  terminal: RouteTerminal,
+  option: RouteTerminalOption,
+  other: RouteTerminal,
+  obstacles: RouteObstacle[],
+): number {
+  if (terminal.options.length <= 1) return 0;
+  const preferred = preferredDepartureSide(terminalCenter(terminal), terminalCenter(other));
+  let direction = 0;
+  if (option.side === oppositeSide(preferred)) direction = OPPOSITE_DEPARTURE_COST;
+  else if (option.side !== preferred) direction = ORTHOGONAL_DEPARTURE_COST;
+
+  const corridorEnd = outward(option.point, option.side, 2 * MIN_BEND_SPACING);
+  const corridor = routeSegments([option.point, corridorEnd])[0];
+  if (!corridor) return direction + CRAMPED_DEPARTURE_COST;
+  const cramped = obstacles.some((obstacle) => {
+    if (obstacle.kind !== 'node' && obstacle.kind !== undefined) return false;
+    if (obstacle.nodeId === terminal.nodeId || obstacle.nodeId === other.nodeId) return false;
+    return segmentCrossesObstacle(corridor, obstacle);
+  });
+  return direction + (cramped ? CRAMPED_DEPARTURE_COST : 0);
+}
+
+function applyDeparturePenalty(
+  candidate: PlannedCandidate,
+  request: RouteRequest,
+  source: RouteTerminalOption,
+  target: RouteTerminalOption,
+  obstacles: RouteObstacle[],
+): PlannedCandidate {
+  candidate.metric.natural = terminalDeparturePenalty(request.source, source, request.target, obstacles)
+    + terminalDeparturePenalty(request.target, target, request.source, obstacles);
+  return candidate;
 }
 
 function uniqueNumbers(values: number[]): number[] {
@@ -148,7 +234,7 @@ function routeTopologyKey(candidate: PlannedCandidate): string {
 }
 
 function selectDiverseCandidates(candidates: PlannedCandidate[], limit: number): PlannedCandidate[] {
-  const sorted = candidates.slice().sort((left, right) => compareCandidateMetric(left.metric, right.metric) || routeKey(left.route.points).localeCompare(routeKey(right.route.points)));
+  const sorted = candidates.slice().sort((left, right) => compareLocalMetric(left.metric, right.metric) || routeKey(left.route.points).localeCompare(routeKey(right.route.points)));
   if (sorted.length <= limit) return sorted;
 
   const selected: PlannedCandidate[] = [];
@@ -212,7 +298,7 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
     if (seen.has(key)) return;
     seen.add(key);
     const candidate = buildCandidate(request, source, target, points, obstacles, reserved);
-    if (candidate) candidates.push(candidate);
+    if (candidate) candidates.push(applyDeparturePenalty(candidate, request, source, target, obstacles));
   };
 
   for (const source of request.source.options) {
@@ -226,6 +312,7 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
       const verticalDirect = Math.abs(source.point.x - target.point.x) < 0.25 && (source.side === 'top' || source.side === 'bottom') && (target.side === 'top' || target.side === 'bottom');
       if (horizontalDirect || verticalDirect) {
         const direct = buildCandidate(request, source, target, [source.point, target.point], obstacles, reserved);
+        if (direct) applyDeparturePenalty(direct, request, source, target, obstacles);
         if (direct && direct.metric.crossings === 0 && direct.metric.churn === 0 && request.source.options.length === 1 && request.target.options.length === 1) return [direct];
         if (direct) candidates.push(direct);
       }
@@ -249,10 +336,7 @@ function topCandidates(request: RouteRequest, reserved: ReservedRoute[], obstacl
   return selectDiverseCandidates(candidates, limit);
 }
 
-function center(terminal: RouteTerminal): RoutePoint {
-  if (!terminal.options.length) return { x: 0, y: 0 };
-  return { x: terminal.options.reduce((sum, option) => sum + option.point.x, 0) / terminal.options.length, y: terminal.options.reduce((sum, option) => sum + option.point.y, 0) / terminal.options.length };
-}
+function center(terminal: RouteTerminal): RoutePoint { return terminalCenter(terminal); }
 function span(request: RouteRequest): number { return manhattan(center(request.source), center(request.target)) }
 function byId(left: RouteRequest, right: RouteRequest): number { return left.id.localeCompare(right.id, undefined, { numeric: true }) }
 
