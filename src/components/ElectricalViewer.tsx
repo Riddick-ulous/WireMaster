@@ -17,6 +17,7 @@ interface ConnectorNodeData extends Record<string, unknown> {
 
 type ConnectorNode = Node<ConnectorNodeData, 'connector'>;
 type ActivePinWire = WireInstance & { endpointA: PinEndpoint; endpointB: PinEndpoint };
+export type WireRenderStyle = 'smooth' | 'orthogonal';
 
 function isActivePinWire(wire: WireInstance): wire is ActivePinWire {
   return wire.status === 'ACTIVE' && wire.endpointA.kind === 'pin' && wire.endpointB.kind === 'pin';
@@ -47,12 +48,13 @@ interface Props {
   harnessId: UUID;
   selectedConnectorId: UUID | null;
   highlightedNetId: UUID | null;
+  wireRenderStyle: WireRenderStyle;
   onSelectConnector: (id: UUID) => void;
   onHighlightNet: (id: UUID | null) => void;
   onLayoutChange: (connectorId: UUID, x: number, y: number) => void;
 }
 
-export function ElectricalViewer({ project, harnessId, selectedConnectorId, highlightedNetId, onSelectConnector, onHighlightNet, onLayoutChange }: Props) {
+export function ElectricalViewer({ project, harnessId, selectedConnectorId, highlightedNetId, wireRenderStyle, onSelectConnector, onHighlightNet, onLayoutChange }: Props) {
   const harness = project.subHarnesses.find((item) => item.id === harnessId)!;
   const wireClasses = project.wireClasses;
 
@@ -78,13 +80,14 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       sourceHandle: `s-${wire.endpointA.pinId}`,
       target: wire.endpointB.connectorId,
       targetHandle: `t-${wire.endpointB.pinId}`,
+      type: wireRenderStyle === 'orthogonal' ? 'step' : 'default',
       label: `${wire.displayId} · ${gauge ?? '—'} · ${colorText}`,
       animated: highlighted,
       style: { stroke: color, strokeWidth: highlighted ? 5 : 2.5, opacity: highlightedNetId && !highlighted ? 0.18 : 1 },
       labelStyle: { fill: highlighted ? '#fff' : '#c8cfdb', fontSize: 11, fontWeight: 600 },
       data: { netId: wire.netId },
     };
-  }), [harness.wires, highlightedNetId, wireClasses]);
+  }), [harness.wires, highlightedNetId, wireClasses, wireRenderStyle]);
 
   return (
     <ReactFlow<ConnectorNode>
