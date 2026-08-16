@@ -16,6 +16,7 @@ import {
 } from '@xyflow/react';
 import type { ConnectorInstance, Project, SpliceInstance, UUID, ViewerRotation, WireEndpoint, WireInstance } from '../core/model';
 import type { SplicePreview } from './SpliceDialog';
+import { connectorNearSplicePosition } from './connectorNearSpliceLayout';
 import { planOrthogonalRoutesV2 } from './orthogonalRouterV2';
 import { spliceLabelObstacle, wireLabelGeometry, type RoutingLabelGeometry } from './routingLabels';
 import { MIN_BEND_SPACING, type CardinalSide, type OrthogonalRouteResult, type RouteObstacle, type RoutePoint, type RouteRequest, type RouteTerminal, type RouteTerminalOption } from './routingGeometry';
@@ -34,7 +35,6 @@ const CONNECTOR_TITLE_PX = 31;
 const HORIZONTAL_PIN_WIDTH_PX = 32;
 const HORIZONTAL_PIN_HEIGHT_PX = 92;
 const SPLICE_SIZE_PX = 12;
-const CONNECTOR_SPLICE_GAP_PX = 22;
 const PREVIEW_SPLICE_ID = '__wiremaster_splice_preview__';
 
 interface WireVisual { text: string; color: string; highlighted: boolean; dimmedByNet: boolean }
@@ -174,16 +174,6 @@ function connectorNearAnchorLead(wire: ActiveWire, splices: Map<UUID, SpliceInst
   if (!spliceEndpoint || !pinEndpoint) return false;
   const splice = splices.get(spliceEndpoint.spliceId);
   return splice?.placement === 'CONNECTOR' && splice.anchorPinId === pinEndpoint.pinId && splice.ownerConnectorId === pinEndpoint.connectorId;
-}
-
-function connectorNearSplicePosition(splice: SpliceInstance, connector: ConnectorInstance | undefined, connectorPosition: RoutePoint, rotation: ViewerRotation) {
-  const pinIndex = Math.max(0, connector?.pins.findIndex((pin) => pin.id === splice.anchorPinId) ?? 0);
-  const pinCenterY = connectorPosition.y + CONNECTOR_TITLE_PX + pinIndex * PIN_PITCH_PX + PIN_PITCH_PX / 2;
-  const pinCenterX = connectorPosition.x + pinIndex * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2;
-  if (rotation === 180) return { position: { x: connectorPosition.x - CONNECTOR_SPLICE_GAP_PX - SPLICE_SIZE_PX, y: pinCenterY - SPLICE_SIZE_PX / 2 }, labelSide: 'left' as const };
-  if (rotation === 90) return { position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y + CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX + CONNECTOR_SPLICE_GAP_PX }, labelSide: 'bottom' as const };
-  if (rotation === 270) return { position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y - CONNECTOR_SPLICE_GAP_PX - SPLICE_SIZE_PX }, labelSide: 'top' as const };
-  return { position: { x: connectorPosition.x + CONNECTOR_WIDTH_PX + CONNECTOR_SPLICE_GAP_PX, y: pinCenterY - SPLICE_SIZE_PX / 2 }, labelSide: 'right' as const };
 }
 
 function defaultFreeSplicePosition(splice: SpliceInstance, connectors: ConnectorInstance[], connectorPositions: Record<UUID, RoutePoint>, index: number): RoutePoint {
