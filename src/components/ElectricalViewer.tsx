@@ -24,6 +24,7 @@ import type {
   WireEndpoint,
   WireInstance,
 } from '../core/model';
+import type { SplicePreview } from './SpliceDialog';
 
 interface ConnectorNodeData extends Record<string, unknown> {
   connector: ConnectorInstance;
@@ -35,6 +36,9 @@ interface SpliceNodeData extends Record<string, unknown> {
   splice: SpliceInstance;
   netName: string;
   labelSide: 'left' | 'right' | 'top' | 'bottom';
+  wireCount: number;
+  summary: string;
+  preview?: boolean;
 }
 
 type ConnectorNode = Node<ConnectorNodeData, 'connector'>;
@@ -46,6 +50,7 @@ export type WireRenderStyle = 'smooth' | 'orthogonal';
 const PIN_PITCH_PX = 28;
 const BREAKOUT_BASE_PX = 38;
 const SPLICE_BREAKOUT_PX = 14;
+const PREVIEW_SPLICE_ID = '__wiremaster_splice_preview__';
 
 type EdgeEnd = 'source' | 'target';
 
@@ -83,9 +88,7 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
           event.stopPropagation();
           data.onRotate(data.connector.id);
         }}
-      >
-        ↻
-      </button>
+      >↻</button>
     </div>
   );
 
@@ -95,12 +98,7 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
       <div className="viewer-pins">
         {data.connector.pins.map((pin) => (
           <div className="viewer-pin" key={pin.id}>
-            <Handle
-              id={`p-${pin.id}`}
-              type="source"
-              position={handlePosition}
-              className="pin-handle"
-            />
+            <Handle id={`p-${pin.id}`} type="source" position={handlePosition} className="pin-handle" />
             <span className="cavity">{pin.cavity}</span>
             <span className="pin-name">{pin.pinName || '—'}</span>
           </div>
@@ -114,16 +112,11 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
 function SpliceNodeView({ data }: NodeProps<SpliceNode>) {
   return (
     <div
-      className={`viewer-splice ${data.splice.placement.toLowerCase()} status-${data.splice.status.toLowerCase()} label-${data.labelSide}`}
-      title={`${data.splice.displayId} · ${data.netName} · ${data.splice.placement === 'CONNECTOR' ? 'connector-near' : 'free splice'}`}
+      className={`viewer-splice ${data.splice.placement.toLowerCase()} status-${data.splice.status.toLowerCase()} label-${data.labelSide} ${data.preview ? 'preview' : ''}`}
+      title={data.summary}
     >
-      <Handle
-        id={`s-${data.splice.id}`}
-        type="source"
-        position={Position.Right}
-        className="splice-handle"
-      />
-      <span className="splice-tag">{data.splice.displayId}</span>
+      <Handle id={`s-${data.splice.id}`} type="source" position={Position.Right} className="splice-handle" />
+      <span className="splice-tag">{data.preview ? 'NEW' : data.splice.displayId}{data.wireCount ? ` · ${data.wireCount}W` : ''}</span>
     </div>
   );
 }
@@ -167,61 +160,19 @@ function orthogonalPath(
 
   if (sourceHorizontal && targetHorizontal) {
     const corridorY = (sourceOut.y + targetOut.y) / 2 + corridorOffset;
-    return [
-      `M ${sourceX} ${sourceY}`,
-      `L ${sourceOut.x} ${sourceOut.y}`,
-      `L ${sourceOut.x} ${corridorY}`,
-      `L ${targetOut.x} ${corridorY}`,
-      `L ${targetOut.x} ${targetOut.y}`,
-      `L ${targetX} ${targetY}`,
-    ].join(' ');
+    return [`M ${sourceX} ${sourceY}`, `L ${sourceOut.x} ${sourceOut.y}`, `L ${sourceOut.x} ${corridorY}`, `L ${targetOut.x} ${corridorY}`, `L ${targetOut.x} ${targetOut.y}`, `L ${targetX} ${targetY}`].join(' ');
   }
-
   if (!sourceHorizontal && !targetHorizontal) {
     const corridorX = (sourceOut.x + targetOut.x) / 2 + corridorOffset;
-    return [
-      `M ${sourceX} ${sourceY}`,
-      `L ${sourceOut.x} ${sourceOut.y}`,
-      `L ${corridorX} ${sourceOut.y}`,
-      `L ${corridorX} ${targetOut.y}`,
-      `L ${targetOut.x} ${targetOut.y}`,
-      `L ${targetX} ${targetY}`,
-    ].join(' ');
+    return [`M ${sourceX} ${sourceY}`, `L ${sourceOut.x} ${sourceOut.y}`, `L ${corridorX} ${sourceOut.y}`, `L ${corridorX} ${targetOut.y}`, `L ${targetOut.x} ${targetOut.y}`, `L ${targetX} ${targetY}`].join(' ');
   }
-
   if (sourceHorizontal) {
-    return [
-      `M ${sourceX} ${sourceY}`,
-      `L ${sourceOut.x} ${sourceOut.y}`,
-      `L ${targetOut.x} ${sourceOut.y}`,
-      `L ${targetOut.x} ${targetOut.y}`,
-      `L ${targetX} ${targetY}`,
-    ].join(' ');
+    return [`M ${sourceX} ${sourceY}`, `L ${sourceOut.x} ${sourceOut.y}`, `L ${targetOut.x} ${sourceOut.y}`, `L ${targetOut.x} ${targetOut.y}`, `L ${targetX} ${targetY}`].join(' ');
   }
-
-  return [
-    `M ${sourceX} ${sourceY}`,
-    `L ${sourceOut.x} ${sourceOut.y}`,
-    `L ${sourceOut.x} ${targetOut.y}`,
-    `L ${targetOut.x} ${targetOut.y}`,
-    `L ${targetX} ${targetY}`,
-  ].join(' ');
+  return [`M ${sourceX} ${sourceY}`, `L ${sourceOut.x} ${sourceOut.y}`, `L ${sourceOut.x} ${targetOut.y}`, `L ${targetOut.x} ${targetOut.y}`, `L ${targetX} ${targetY}`].join(' ');
 }
 
-function WireEdge({
-  id,
-  sourceX,
-  sourceY,
-  sourcePosition,
-  targetX,
-  targetY,
-  targetPosition,
-  data,
-  style,
-  markerStart,
-  markerEnd,
-  interactionWidth,
-}: EdgeProps) {
+function WireEdge({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, data, style, markerStart, markerEnd, interactionWidth }: EdgeProps) {
   const routing = data?.routing === 'orthogonal' ? 'orthogonal' : 'smooth';
   const corridorOffset = typeof data?.corridorOffset === 'number' ? data.corridorOffset : 0;
   const sourceBreakout = typeof data?.sourceBreakout === 'number' ? data.sourceBreakout : BREAKOUT_BASE_PX;
@@ -234,70 +185,20 @@ function WireEdge({
   const direct = data?.direct === true;
 
   let path: string;
-  if (direct) {
-    path = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
-  } else if (routing === 'orthogonal') {
-    path = orthogonalPath(
-      sourceX,
-      sourceY,
-      sourcePosition,
-      sourceBreakout,
-      targetX,
-      targetY,
-      targetPosition,
-      targetBreakout,
-      corridorOffset,
-    );
-  } else {
-    [path] = getBezierPath({
-      sourceX,
-      sourceY,
-      sourcePosition,
-      targetX,
-      targetY,
-      targetPosition,
-    });
-  }
+  if (direct) path = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+  else if (routing === 'orthogonal') path = orthogonalPath(sourceX, sourceY, sourcePosition, sourceBreakout, targetX, targetY, targetPosition, targetBreakout, corridorOffset);
+  else [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
 
   const sourceLabel = endpointLabelPosition(sourceX, sourceY, sourcePosition);
   const targetLabel = endpointLabelPosition(targetX, targetY, targetPosition);
 
   return (
     <>
-      <BaseEdge
-        id={id}
-        path={path}
-        style={style}
-        markerStart={markerStart}
-        markerEnd={markerEnd}
-        interactionWidth={interactionWidth}
-      />
+      <BaseEdge id={id} path={path} style={style} markerStart={markerStart} markerEnd={markerEnd} interactionWidth={interactionWidth} />
       {wireInfo && (sourceLabelVisible || targetLabelVisible) && (
         <g className="wire-end-labels" opacity={labelOpacity} pointerEvents="none">
-          {sourceLabelVisible && (
-            <text
-              x={sourceLabel.x}
-              y={sourceLabel.y}
-              textAnchor={sourceLabel.anchor}
-              transform={sourceLabel.rotation ? `rotate(${sourceLabel.rotation} ${sourceLabel.x} ${sourceLabel.y})` : undefined}
-              fill={labelFill}
-              className="wire-end-label"
-            >
-              {wireInfo}
-            </text>
-          )}
-          {targetLabelVisible && (
-            <text
-              x={targetLabel.x}
-              y={targetLabel.y}
-              textAnchor={targetLabel.anchor}
-              transform={targetLabel.rotation ? `rotate(${targetLabel.rotation} ${targetLabel.x} ${targetLabel.y})` : undefined}
-              fill={labelFill}
-              className="wire-end-label"
-            >
-              {wireInfo}
-            </text>
-          )}
+          {sourceLabelVisible && <text x={sourceLabel.x} y={sourceLabel.y} textAnchor={sourceLabel.anchor} transform={sourceLabel.rotation ? `rotate(${sourceLabel.rotation} ${sourceLabel.x} ${sourceLabel.y})` : undefined} fill={labelFill} className="wire-end-label">{wireInfo}</text>}
+          {targetLabelVisible && <text x={targetLabel.x} y={targetLabel.y} textAnchor={targetLabel.anchor} transform={targetLabel.rotation ? `rotate(${targetLabel.rotation} ${targetLabel.x} ${targetLabel.y})` : undefined} fill={labelFill} className="wire-end-label">{wireInfo}</text>}
         </g>
       )}
     </>
@@ -310,6 +211,10 @@ const edgeTypes = { 'wire-edge': WireEdge };
 const colorMap: Record<string, string> = {
   VIOLET: '#a970ff', RED: '#ff5b67', GREEN: '#4adf8f', WHITE: '#f4f6fa', BLACK: '#353a46', BLUE: '#52a8ff', YELLOW: '#ffd65c', ORANGE: '#ff9f4a', BROWN: '#a8734a', GREY: '#9aa3b2',
 };
+
+function endpointKeyLocal(endpoint: WireEndpoint): string {
+  return endpoint.kind === 'pin' ? `pin:${endpoint.connectorId}:${endpoint.pinId}` : `splice:${endpoint.spliceId}`;
+}
 
 function nodeIdForEndpoint(endpoint: WireEndpoint): UUID {
   return endpoint.kind === 'pin' ? endpoint.connectorId : endpoint.spliceId;
@@ -331,14 +236,11 @@ function corridorOffsets(wires: ActiveWire[]): Map<UUID, number> {
     group.push(wire);
     groups.set(key, group);
   }
-
   const result = new Map<UUID, number>();
   for (const group of groups.values()) {
     group.sort((left, right) => left.displayId.localeCompare(right.displayId, undefined, { numeric: true }));
     const center = (group.length - 1) / 2;
-    group.forEach((wire, index) => {
-      result.set(wire.id, (index - center) * PIN_PITCH_PX);
-    });
+    group.forEach((wire, index) => result.set(wire.id, (index - center) * PIN_PITCH_PX));
   }
   return result;
 }
@@ -350,13 +252,8 @@ function breakoutKey(wireId: UUID, end: EdgeEnd): string {
 function connectorBreakouts(wires: ActiveWire[], connectors: ConnectorInstance[]): Map<string, number> {
   const entriesByConnector = new Map<UUID, Array<{ wire: ActiveWire; end: EdgeEnd; pinIndex: number }>>();
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector]));
-
   for (const wire of wires) {
-    const endpoints: Array<{ endpoint: WireEndpoint; end: EdgeEnd }> = [
-      { endpoint: wire.endpointA, end: 'source' },
-      { endpoint: wire.endpointB, end: 'target' },
-    ];
-
+    const endpoints: Array<{ endpoint: WireEndpoint; end: EdgeEnd }> = [{ endpoint: wire.endpointA, end: 'source' }, { endpoint: wire.endpointB, end: 'target' }];
     for (const { endpoint, end } of endpoints) {
       if (endpoint.kind !== 'pin') continue;
       const connector = connectorById.get(endpoint.connectorId);
@@ -367,14 +264,10 @@ function connectorBreakouts(wires: ActiveWire[], connectors: ConnectorInstance[]
       entriesByConnector.set(connector.id, entries);
     }
   }
-
   const result = new Map<string, number>();
   for (const entries of entriesByConnector.values()) {
-    entries.sort((left, right) => left.pinIndex - right.pinIndex
-      || left.wire.displayId.localeCompare(right.wire.displayId, undefined, { numeric: true }));
-    entries.forEach((entry, index) => {
-      result.set(breakoutKey(entry.wire.id, entry.end), BREAKOUT_BASE_PX + index * PIN_PITCH_PX);
-    });
+    entries.sort((left, right) => left.pinIndex - right.pinIndex || left.wire.displayId.localeCompare(right.wire.displayId, undefined, { numeric: true }));
+    entries.forEach((entry, index) => result.set(breakoutKey(entry.wire.id, entry.end), BREAKOUT_BASE_PX + index * PIN_PITCH_PX));
   }
   return result;
 }
@@ -407,10 +300,7 @@ function defaultFreeSplicePosition(
     return [{ x: position.x + 90, y: position.y + 70 }];
   });
   if (!points.length) return { x: 360 + index * 40, y: 260 + index * 30 };
-  return {
-    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
-  };
+  return { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length };
 }
 
 function connectorNearAnchorLead(wire: ActiveWire, splices: Map<UUID, SpliceInstance>): boolean {
@@ -418,9 +308,14 @@ function connectorNearAnchorLead(wire: ActiveWire, splices: Map<UUID, SpliceInst
   const pinEndpoint = wire.endpointA.kind === 'pin' ? wire.endpointA : wire.endpointB.kind === 'pin' ? wire.endpointB : null;
   if (!spliceEndpoint || !pinEndpoint) return false;
   const splice = splices.get(spliceEndpoint.spliceId);
-  return splice?.placement === 'CONNECTOR'
-    && splice.anchorPinId === pinEndpoint.pinId
-    && splice.ownerConnectorId === pinEndpoint.connectorId;
+  return splice?.placement === 'CONNECTOR' && splice.anchorPinId === pinEndpoint.pinId && splice.ownerConnectorId === pinEndpoint.connectorId;
+}
+
+function endpointDescription(endpoint: WireEndpoint, connectors: ConnectorInstance[], splices: SpliceInstance[]): string {
+  if (endpoint.kind === 'splice') return splices.find((item) => item.id === endpoint.spliceId)?.displayId ?? 'Unknown splice';
+  const connector = connectors.find((item) => item.id === endpoint.connectorId);
+  const pin = connector?.pins.find((item) => item.id === endpoint.pinId);
+  return `${connector?.displayId ?? '?'} · ${connector?.label ?? 'Unknown connector'} · cavity ${pin?.cavity ?? '?'}${pin?.pinName ? ` · ${pin.pinName}` : ''}`;
 }
 
 interface Props {
@@ -429,8 +324,10 @@ interface Props {
   selectedConnectorId: UUID | null;
   highlightedNetId: UUID | null;
   wireRenderStyle: WireRenderStyle;
+  splicePreview: SplicePreview | null;
   onSelectConnector: (id: UUID) => void;
   onHighlightNet: (id: UUID | null) => void;
+  onEditSplice: (id: UUID) => void;
   onRotateConnector: (id: UUID) => void;
   onLayoutChange: (connectorId: UUID, x: number, y: number) => void;
   onSpliceLayoutChange: (spliceId: UUID, x: number, y: number) => void;
@@ -442,8 +339,10 @@ export function ElectricalViewer({
   selectedConnectorId,
   highlightedNetId,
   wireRenderStyle,
+  splicePreview,
   onSelectConnector,
   onHighlightNet,
+  onEditSplice,
   onRotateConnector,
   onLayoutChange,
   onSpliceLayoutChange,
@@ -456,53 +355,88 @@ export function ElectricalViewer({
       id: connector.id,
       type: 'connector',
       position: harness.viewerLayout.connectorPositions[connector.id] ?? { x: 80 + index * 380, y: 120 },
-      data: {
-        connector,
-        rotation: harness.viewerLayout.connectorRotations[connector.id] ?? 0,
-        onRotate: onRotateConnector,
-      },
+      data: { connector, rotation: harness.viewerLayout.connectorRotations[connector.id] ?? 0, onRotate: onRotateConnector },
       selected: connector.id === selectedConnectorId,
     }));
     const connectorById = new Map(harness.connectors.map((connector) => [connector.id, connector]));
     const connectorPositionById = new Map(connectors.map((node) => [node.id, node.position]));
     const resolvedConnectorPositions = Object.fromEntries(connectors.map((node) => [node.id, node.position])) as Record<UUID, { x: number; y: number }>;
 
-    const splices: SpliceNode[] = harness.splices
-      .filter((splice) => splice.status !== 'ORPHANED')
-      .map((splice, index) => {
-        let position = harness.viewerLayout.splicePositions[splice.id]
-          ?? defaultFreeSplicePosition(splice, harness.connectors, resolvedConnectorPositions, index);
-        let labelSide: SpliceNodeData['labelSide'] = 'right';
-        if (splice.placement === 'CONNECTOR' && splice.ownerConnectorId) {
-          const connector = connectorById.get(splice.ownerConnectorId);
-          const connectorPosition = connectorPositionById.get(splice.ownerConnectorId) ?? { x: 80, y: 120 };
-          const rotation = harness.viewerLayout.connectorRotations[splice.ownerConnectorId] ?? 0;
-          const placement = connectorNearSplicePosition(splice, connector, connectorPosition, rotation);
-          position = placement.position;
-          labelSide = placement.labelSide;
-        }
-        return {
-          id: splice.id,
-          type: 'splice',
-          position,
-          draggable: splice.placement === 'FREE',
-          data: {
-            splice,
-            netName: project.nets.find((net) => net.id === splice.netId)?.name ?? 'Unknown net',
-            labelSide,
-          },
-        };
+    const splices: SpliceNode[] = harness.splices.filter((splice) => splice.status !== 'ORPHANED').map((splice, index) => {
+      let position = harness.viewerLayout.splicePositions[splice.id] ?? defaultFreeSplicePosition(splice, harness.connectors, resolvedConnectorPositions, index);
+      let labelSide: SpliceNodeData['labelSide'] = 'right';
+      if (splice.placement === 'CONNECTOR' && splice.ownerConnectorId) {
+        const placement = connectorNearSplicePosition(splice, connectorById.get(splice.ownerConnectorId), connectorPositionById.get(splice.ownerConnectorId) ?? { x: 80, y: 120 }, harness.viewerLayout.connectorRotations[splice.ownerConnectorId] ?? 0);
+        position = placement.position;
+        labelSide = placement.labelSide;
+      }
+      const connected = harness.wires.filter((wire) => wire.status !== 'ORPHANED' && ((wire.endpointA.kind === 'splice' && wire.endpointA.spliceId === splice.id) || (wire.endpointB.kind === 'splice' && wire.endpointB.spliceId === splice.id)));
+      const summaryLines = connected.map((wire) => {
+        const other = wire.endpointA.kind === 'splice' && wire.endpointA.spliceId === splice.id ? wire.endpointB : wire.endpointA;
+        return `${wire.displayId}: ${endpointDescription(other, harness.connectors, harness.splices)} [${wire.status}]`;
       });
-    return [...connectors, ...splices];
-  }, [harness.connectors, harness.splices, harness.viewerLayout.connectorPositions, harness.viewerLayout.connectorRotations, harness.viewerLayout.splicePositions, onRotateConnector, project.nets, selectedConnectorId]);
+      return {
+        id: splice.id,
+        type: 'splice',
+        position,
+        draggable: splice.placement === 'FREE',
+        data: {
+          splice,
+          netName: project.nets.find((net) => net.id === splice.netId)?.name ?? 'Unknown net',
+          labelSide,
+          wireCount: connected.length,
+          summary: `${splice.displayId} · ${project.nets.find((net) => net.id === splice.netId)?.name ?? 'Unknown net'}\n${splice.placement === 'CONNECTOR' ? 'Connector-near' : 'Free splice'}\n${summaryLines.join('\n')}`,
+        },
+      };
+    });
+
+    const actualNodes: FlowNode[] = [...connectors, ...splices];
+    if (!splicePreview || splicePreview.spliceId) return actualNodes;
+
+    const fake: SpliceInstance = {
+      id: PREVIEW_SPLICE_ID,
+      displayId: 'NEW',
+      netId: splicePreview.netId,
+      placement: splicePreview.placement,
+      ownerConnectorId: null,
+      anchorPinId: splicePreview.anchorPinId,
+      memberEndpoints: [],
+      status: 'ACTIVE',
+    };
+    let position = { x: 420, y: 250 };
+    let labelSide: SpliceNodeData['labelSide'] = 'right';
+    if (splicePreview.placement === 'CONNECTOR' && splicePreview.anchorPinId) {
+      const anchorConnector = harness.connectors.find((connector) => connector.pins.some((pin) => pin.id === splicePreview.anchorPinId));
+      if (anchorConnector) {
+        fake.ownerConnectorId = anchorConnector.id;
+        const placement = connectorNearSplicePosition(fake, anchorConnector, connectorPositionById.get(anchorConnector.id) ?? { x: 80, y: 120 }, harness.viewerLayout.connectorRotations[anchorConnector.id] ?? 0);
+        position = placement.position;
+        labelSide = placement.labelSide;
+      }
+    } else {
+      const points = splicePreview.endpoints.flatMap((endpoint) => {
+        const node = actualNodes.find((item) => item.id === nodeIdForEndpoint(endpoint));
+        if (!node) return [];
+        return [{ x: node.position.x + (node.type === 'connector' ? 90 : 0), y: node.position.y + (node.type === 'connector' ? 70 : 0) }];
+      });
+      if (points.length) position = { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length };
+    }
+    actualNodes.push({
+      id: PREVIEW_SPLICE_ID,
+      type: 'splice',
+      position,
+      draggable: false,
+      selectable: false,
+      data: { splice: fake, netName: project.nets.find((net) => net.id === splicePreview.netId)?.name ?? 'Unknown net', labelSide, wireCount: splicePreview.endpoints.length, summary: 'Proposed splice wiring', preview: true },
+    });
+    return actualNodes;
+  }, [harness.connectors, harness.splices, harness.viewerLayout.connectorPositions, harness.viewerLayout.connectorRotations, harness.viewerLayout.splicePositions, harness.wires, onRotateConnector, project.nets, selectedConnectorId, splicePreview]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(desiredNodes);
   useEffect(() => {
     setNodes((current) => desiredNodes.map((desired) => {
       const live = current.find((node) => node.id === desired.id);
-      return live?.dragging
-        ? { ...desired, position: live.position, dragging: true }
-        : desired;
+      return live?.dragging ? { ...desired, position: live.position, dragging: true } : desired;
     }));
   }, [desiredNodes, setNodes]);
 
@@ -511,7 +445,7 @@ export function ElectricalViewer({
   const routeCorridors = useMemo(() => corridorOffsets(activeWires), [activeWires]);
   const breakouts = useMemo(() => connectorBreakouts(activeWires, harness.connectors), [activeWires, harness.connectors]);
 
-  const edges = useMemo<Edge[]>(() => activeWires.map((wire) => {
+  const normalEdges = useMemo<Edge[]>(() => activeWires.map((wire) => {
     const wireClass = wireClasses.find((item) => item.id === wire.wireClassId);
     const primary = wire.overrides.primaryColor.mode === 'explicit' ? wire.overrides.primaryColor.value : wireClass?.primaryColor;
     const secondary = wire.overrides.secondaryColor.mode === 'explicit' ? wire.overrides.secondaryColor.value : wireClass?.secondaryColor;
@@ -519,7 +453,8 @@ export function ElectricalViewer({
     const highlighted = highlightedNetId === wire.netId;
     const color = colorMap[primary ?? ''] ?? '#9aa3b2';
     const colorText = [primary, secondary].filter(Boolean).join('/') || '—';
-    const dimmed = Boolean(highlightedNetId && !highlighted);
+    const dimmedByNet = Boolean(highlightedNetId && !highlighted);
+    const previewAffected = Boolean(splicePreview && (splicePreview.splitWireId === wire.id || (splicePreview.spliceId && [wire.endpointA, wire.endpointB].some((endpoint) => endpoint.kind === 'splice' && endpoint.spliceId === splicePreview.spliceId))));
     const anchorLead = connectorNearAnchorLead(wire, spliceById);
     return {
       id: wire.id,
@@ -528,8 +463,8 @@ export function ElectricalViewer({
       target: nodeIdForEndpoint(wire.endpointB),
       targetHandle: handleIdForEndpoint(wire.endpointB),
       type: 'wire-edge',
-      animated: highlighted && !anchorLead,
-      style: { stroke: color, strokeWidth: highlighted ? 5 : anchorLead ? 2 : 2.5, opacity: dimmed ? 0.18 : 1 },
+      animated: highlighted && !anchorLead && !previewAffected,
+      style: { stroke: color, strokeWidth: highlighted ? 5 : anchorLead ? 2 : 2.5, opacity: previewAffected ? 0.18 : dimmedByNet ? 0.18 : 1 },
       data: {
         netId: wire.netId,
         routing: wireRenderStyle,
@@ -541,10 +476,42 @@ export function ElectricalViewer({
         sourceLabelVisible: !anchorLead && wire.endpointA.kind === 'pin',
         targetLabelVisible: !anchorLead && wire.endpointB.kind === 'pin',
         labelFill: highlighted ? '#fff' : '#aeb8c6',
-        labelOpacity: dimmed ? 0.22 : 0.9,
+        labelOpacity: previewAffected ? 0.2 : dimmedByNet ? 0.22 : 0.9,
       },
     };
-  }), [activeWires, breakouts, highlightedNetId, routeCorridors, spliceById, wireClasses, wireRenderStyle]);
+  }), [activeWires, breakouts, highlightedNetId, routeCorridors, spliceById, splicePreview, wireClasses, wireRenderStyle]);
+
+  const previewEdges = useMemo<Edge[]>(() => {
+    if (!splicePreview) return [];
+    const sourceId = splicePreview.spliceId ?? PREVIEW_SPLICE_ID;
+    return splicePreview.endpoints
+      .filter((endpoint) => nodeIdForEndpoint(endpoint) !== sourceId)
+      .map((endpoint, index) => {
+        const direct = splicePreview.placement === 'CONNECTOR' && endpoint.kind === 'pin' && endpoint.pinId === splicePreview.anchorPinId;
+        return {
+          id: `preview-${index}-${endpointKeyLocal(endpoint)}`,
+          source: sourceId,
+          sourceHandle: `s-${sourceId}`,
+          target: nodeIdForEndpoint(endpoint),
+          targetHandle: handleIdForEndpoint(endpoint),
+          type: 'wire-edge',
+          selectable: false,
+          focusable: false,
+          style: { stroke: '#b8a7ff', strokeWidth: 3, strokeDasharray: '8 6', opacity: 0.95 },
+          data: {
+            netId: splicePreview.netId,
+            routing: wireRenderStyle,
+            direct,
+            sourceBreakout: SPLICE_BREAKOUT_PX,
+            targetBreakout: endpoint.kind === 'pin' ? BREAKOUT_BASE_PX : SPLICE_BREAKOUT_PX,
+            sourceLabelVisible: false,
+            targetLabelVisible: false,
+          },
+        } as Edge;
+      });
+  }, [splicePreview, wireRenderStyle]);
+
+  const edges = useMemo(() => [...normalEdges, ...previewEdges], [normalEdges, previewEdges]);
 
   return (
     <ReactFlow<FlowNode>
@@ -556,11 +523,14 @@ export function ElectricalViewer({
       onNodesChange={onNodesChange}
       onNodeDragStop={(_, node) => {
         if (node.type === 'connector') onLayoutChange(node.id, node.position.x, node.position.y);
-        else if (node.type === 'splice' && node.data.splice.placement === 'FREE') onSpliceLayoutChange(node.id, node.position.x, node.position.y);
+        else if (node.type === 'splice' && !node.data.preview && node.data.splice.placement === 'FREE') onSpliceLayoutChange(node.id, node.position.x, node.position.y);
       }}
       onNodeClick={(_, node) => {
         if (node.type === 'connector') onSelectConnector(node.id);
-        else if (node.type === 'splice') onHighlightNet(node.data.splice.netId);
+        else if (node.type === 'splice' && !node.data.preview) {
+          onHighlightNet(node.data.splice.netId);
+          onEditSplice(node.data.splice.id);
+        }
       }}
       onEdgeClick={(_, edge) => onHighlightNet((edge.data?.netId as UUID | undefined) ?? null)}
       fitView
