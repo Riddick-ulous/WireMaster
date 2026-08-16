@@ -365,7 +365,13 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
   if (!geometries.size) return { requests, obstacles, geometries };
 
   const localObstacles = routingObstaclesForJunctions(obstacles, geometries);
-  const assignments = assignLandingPorts(requests, localObstacles, geometries);
+  // Port assignment must see every foreign junction envelope. Otherwise a port
+  // can be selected whose mandatory 28 px terminal stub already enters a
+  // neighbouring splice zone, leaving the global path planner with an
+  // impossible request before it starts.
+  const junctionObstacles = [...geometries.values()].map((geometry) => geometry.envelope);
+  const expandedObstacles = [...localObstacles, ...junctionObstacles];
+  const assignments = assignLandingPorts(requests, expandedObstacles, geometries);
   const expandedRequests = requests.map((request) => ({
     ...request,
     source: geometries.has(request.source.nodeId)
@@ -375,7 +381,6 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
       ? { nodeId: request.target.nodeId, options: [assignments.get(`${request.id}:target`) ?? geometries.get(request.target.nodeId)!.ports[0]] }
       : request.target,
   }));
-  const expandedObstacles = [...localObstacles, ...[...geometries.values()].map((geometry) => geometry.envelope)];
   return { requests: expandedRequests, obstacles: expandedObstacles, geometries };
 }
 
