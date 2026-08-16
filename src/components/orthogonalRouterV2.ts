@@ -35,6 +35,9 @@ const RIPUP_CANDIDATE_LIMIT = 12;
 const RIPUP_REROUTE_LIMIT = 8;
 const RIPUP_BLOCKER_SCAN_LIMIT = 10;
 const RIPUP_MAX_PASSES = 3;
+const EXACT_REPAIR_REQUEST_LIMIT = 12;
+const EXACT_REPAIR_CANDIDATES = 12;
+const EXACT_REPAIR_NODE_BUDGET = 12000;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -392,6 +395,65 @@ function repairUnroutedRoutes(initial: Map<string, OrthogonalRouteResult>, reque
   return routes;
 }
 
+/**
+ * Deterministic bounded exact repair for small, dense routing clusters. This is
+ * intentionally not the normal planner: it runs only after beam + rip-up still
+ * leave an UNROUTED wire and only for at most 12 requests. At each node it uses
+ * a most-constrained-first choice and explores diverse contract-valid route
+ * candidates until it finds a complete zero-UNROUTED solution or exhausts a
+ * fixed search budget.
+ */
+function exactRepairSmallCluster(requests: RouteRequest[], obstacles: RouteObstacle[]): Map<string, OrthogonalRouteResult> | null {
+  if (requests.length > EXACT_REPAIR_REQUEST_LIMIT) return null;
+  let visited = 0;
+
+  const search = (
+    remaining: RouteRequest[],
+    reserved: ReservedRoute[],
+    routes: Map<string, OrthogonalRouteResult>,
+  ): Map<string, OrthogonalRouteResult> | null => {
+    visited += 1;
+    if (visited > EXACT_REPAIR_NODE_BUDGET) return null;
+    if (!remaining.length) return routes;
+
+    let selectedIndex = -1;
+    let selectedCandidates: PlannedCandidate[] | null = null;
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidates = topCandidates(remaining[index], reserved, obstacles, EXACT_REPAIR_CANDIDATES);
+      // A zero-candidate request is not immediately fatal because routing one
+      // more wire can introduce useful adjacent reserved-lane coordinates into
+      // the bounded candidate generator. Prefer the smallest positive domain.
+      if (!candidates.length) continue;
+      if (!selectedCandidates || candidates.length < selectedCandidates.length
+        || (candidates.length === selectedCandidates.length && byId(remaining[index], remaining[selectedIndex]) < 0)) {
+        selectedIndex = index;
+        selectedCandidates = candidates;
+      }
+    }
+    if (selectedIndex < 0 || !selectedCandidates) return null;
+
+    const request = remaining[selectedIndex];
+    const nextRemaining = [...remaining.slice(0, selectedIndex), ...remaining.slice(selectedIndex + 1)];
+    for (const candidate of selectedCandidates) {
+      const nextRoutes = new Map(routes);
+      nextRoutes.set(request.id, candidate.route);
+      const solved = search(
+        nextRemaining,
+        [...reserved, { request, route: candidate.route, segments: candidate.segments }],
+        nextRoutes,
+      );
+      if (solved) return solved;
+    }
+    return null;
+  };
+
+  return search(requests.slice().sort(byId), [], new Map());
+}
+
+function hasUnrouted(routes: Map<string, OrthogonalRouteResult>, requests: RouteRequest[]): boolean {
+  return requests.some((request) => routes.get(request.id)?.status !== 'ROUTED');
+}
+
 export function planOrthogonalRoutesV2(requests: RouteRequest[], obstacles: RouteObstacle[] = []): Map<string, OrthogonalRouteResult> {
   if (!requests.length) return new Map();
   const expanded = expandSpliceFanInRouting(requests, obstacles);
@@ -411,7 +473,12 @@ export function planOrthogonalRoutesV2(requests: RouteRequest[], obstacles: Rout
       if (!best || compareBatch(planned.metric, best.metric) < 0) best = planned;
     }
   }
-  const repaired = repairUnroutedRoutes(best?.routes ?? new Map<string, OrthogonalRouteResult>(), workingRequests, workingObstacles);
+
+  let repaired = repairUnroutedRoutes(best?.routes ?? new Map<string, OrthogonalRouteResult>(), workingRequests, workingObstacles);
+  if (hasUnrouted(repaired, workingRequests) && workingRequests.length <= EXACT_REPAIR_REQUEST_LIMIT) {
+    const exact = exactRepairSmallCluster(workingRequests, workingObstacles);
+    if (exact) repaired = exact;
+  }
   return finalizeSpliceFanInRoutes(repaired, requests, expanded.geometries);
 }
 
