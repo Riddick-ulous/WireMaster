@@ -117,13 +117,18 @@ describe('staggered adjacent connector-near splices', () => {
 
     const requests: RouteRequest[] = [
       { id: 'W5', source: terminal('C2A', 'C2A-p3', 'left', 900, s1Center.y), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
-      { id: 'W6', source: terminal('TOP1', 'TOP1-p3', 'bottom', s1Center.x + 50, 40), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W6', source: terminal('TOP1', 'TOP1-p3', 'bottom', s1Center.x, 40), target: s1, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
       { id: 'W8', source: terminal('C2B', 'C2B-p4', 'left', 900, s2Center.y), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
-      { id: 'W9', source: terminal('TOP2', 'TOP2-p4', 'bottom', s2Center.x + 50, 40), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
+      { id: 'W9', source: terminal('TOP2', 'TOP2-p4', 'bottom', s2Center.x, 40), target: s2, sourceMinStraight: 80, targetMinStraight: MIN_BEND_SPACING },
     ];
 
     const expanded = expandSpliceFanInRouting(requests, obstacles);
     expect(expanded.geometries.size).toBe(0);
+    const expandedSides = new Map(expanded.requests.map((request) => [request.id, request.target.options[0]?.side]));
+    expect(expandedSides.get('W5')).toBe('bottom');
+    expect(expandedSides.get('W6')).toBe('top');
+    expect(expandedSides.get('W8')).toBe('right');
+    expect(expandedSides.get('W9')).toBe('top');
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
     for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
