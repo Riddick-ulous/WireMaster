@@ -205,7 +205,6 @@ function orthogonalPath(
     `L ${sourceOut.x} ${sourceOut.y}`,
     `L ${sourceOut.x} ${targetOut.y}`,
     `L ${targetOut.x} ${targetOut.y}`,
-    `L ${targetOut.x} ${targetOut.y}`,
     `L ${targetX} ${targetY}`,
   ].join(' ');
 }
