@@ -46,7 +46,7 @@ function rowsFor(connector: ConnectorInstance, nets: Net[], splices: SpliceInsta
       cavity: pin.cavity,
       pinName: pin.pinName,
       net: nets.find((net) => net.id === pin.netId)?.name ?? '',
-      splice: anchored.length ? anchored.map((splice) => splice.displayId).join(', ') : pin.netId ? '＋' : '',
+      splice: anchored.length ? anchored.map((splice) => splice.displayId).join(', ') : pin.netId ? 'Add…' : '',
     };
   });
 }
@@ -209,7 +209,7 @@ export function ConnectorGrid({
         { title: 'Cavity', field: 'cavity', width: 76, headerSort: false },
         { title: 'Pin name', field: 'pinName', editor: 'input', headerSort: false },
         { title: 'Net', field: 'net', editor: 'input', headerSort: false },
-        { title: 'Splice', field: 'splice', width: 74, headerSort: false, hozAlign: 'center' },
+        { title: 'Splice', field: 'splice', width: 82, headerSort: false, hozAlign: 'center' },
       ],
     });
     tableRef.current = table;
@@ -218,7 +218,7 @@ export function ConnectorGrid({
       const field = cell.getField();
       const row = cell.getRow().getData() as GridRow;
       if (field === 'splice') {
-        if (row.splice === '＋' && row.net) onCreateSplice(row.id);
+        if (row.splice === 'Add…' && row.net) onCreateSplice(row.id);
         return;
       }
       if (field !== 'pinName' && field !== 'net') return;
