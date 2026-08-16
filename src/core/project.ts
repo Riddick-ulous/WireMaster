@@ -23,6 +23,10 @@ export function endpointKey(endpoint: WireEndpoint): string {
     : `splice:${endpoint.spliceId}`;
 }
 
+function endpointsMatch(left: WireEndpoint, right: WireEndpoint): boolean {
+  return endpointKey(left) === endpointKey(right);
+}
+
 export function findConnector(project: Project, connectorId: UUID): ConnectorInstance | undefined {
   for (const harness of project.subHarnesses) {
     const connector = harness.connectors.find((item) => item.id === connectorId);
@@ -277,10 +281,35 @@ export function createConnectorSpliceFromSplice(
     if (endpointKey(endpoint) === endpointKey(anchorEndpoint)) throw new Error('The anchor pin is moved implicitly and must not be listed as a branch');
   }
 
-  const movedKeys = new Set([endpointKey(anchorEndpoint), ...branchesToMove.map(endpointKey)]);
+  const movedEndpoints = [anchorEndpoint, ...branchesToMove];
+  const movedKeys = new Set(movedEndpoints.map(endpointKey));
   upstream.memberEndpoints = upstream.memberEndpoints.filter((endpoint) => !movedKeys.has(endpointKey(endpoint)));
   const created = createConnectorSplice(project, harnessId, anchorPinId, branchesToMove);
-  upstream.memberEndpoints.push({ kind: 'splice', spliceId: created.id });
+  const upstreamEndpoint: WireEndpoint = { kind: 'splice', spliceId: upstream.id };
+  const createdEndpoint: WireEndpoint = { kind: 'splice', spliceId: created.id };
+
+  // The user explicitly selected these branches to move from the upstream
+  // splice. If exactly one persistent wire represents a selected branch, its
+  // identity can be rebound without inference; only S(upstream)↔S(new) is new.
+  for (const movedEndpoint of movedEndpoints) {
+    const candidates = harness.wires.filter((wire) => {
+      if (wire.netId !== upstream.netId) return false;
+      const forward = endpointsMatch(wire.endpointA, upstreamEndpoint) && endpointsMatch(wire.endpointB, movedEndpoint);
+      const reverse = endpointsMatch(wire.endpointB, upstreamEndpoint) && endpointsMatch(wire.endpointA, movedEndpoint);
+      return forward || reverse;
+    });
+    if (candidates.length === 1) {
+      const wire = candidates[0];
+      wire.lastEndpointSnapshot = `${endpointKey(wire.endpointA)}|${endpointKey(wire.endpointB)}|${wire.netId}`;
+      if (endpointsMatch(wire.endpointA, upstreamEndpoint)) wire.endpointA = createdEndpoint;
+      else wire.endpointB = createdEndpoint;
+      wire.status = 'ACTIVE';
+    } else if (candidates.length > 1) {
+      for (const wire of candidates) wire.status = 'NEEDS_REVIEW';
+    }
+  }
+
+  upstream.memberEndpoints.push(createdEndpoint);
   return created;
 }
 
