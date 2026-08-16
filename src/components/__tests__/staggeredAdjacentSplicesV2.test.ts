@@ -61,15 +61,14 @@ describe('staggered adjacent connector-near splices', () => {
     ];
 
     const expanded = expandSpliceFanInRouting(requests, obstacles);
-    console.info('[staggered-junction-assignment]', expanded.requests.map((request) => ({
+    console.info('[staggered-junction-assignment-json]', JSON.stringify(expanded.requests.map((request) => ({
       id: request.id,
-      source: request.source.options.map((option) => ({ key: option.key, side: option.side, point: option.point })),
-      target: request.target.options.map((option) => ({ key: option.key, side: option.side, point: option.point })),
-    })));
-    console.info('[staggered-junction-obstacles]', expanded.obstacles);
+      source: request.source.options,
+      target: request.target.options,
+    }))));
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
-    console.info('[staggered-junction-results]', requests.map((request) => ({ id: request.id, result: results.get(request.id) })));
+    console.info('[staggered-junction-results-json]', JSON.stringify(requests.map((request) => ({ id: request.id, result: results.get(request.id) }))));
     for (const request of requests) {
       const result = results.get(request.id);
       expect(result?.status, `${request.id} should route with staggered connector-near junctions`).toBe('ROUTED');
