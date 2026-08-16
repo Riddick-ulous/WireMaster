@@ -1,6 +1,9 @@
 import {
   MIN_BEND_SPACING,
   manhattan,
+  outward,
+  routeSegments,
+  segmentCrossesObstacle,
   simplifyRoute,
   type CardinalSide,
   type OrthogonalRouteResult,
@@ -16,6 +19,9 @@ export const SPLICE_FANIN_MIN_LENGTH = 28;
 export const SPLICE_FANIN_PADDING = 14;
 const CONNECTOR_NEAR_THRESHOLD = 96;
 const FAN_KEY = '|fanin:';
+const BLOCKED_PORT_COST = 1_000_000;
+const OPPOSITE_SIDE_COST = 1_200;
+const ORTHOGONAL_SIDE_COST = 180;
 
 const SIDES: CardinalSide[] = ['left', 'right', 'top', 'bottom'];
 
@@ -33,6 +39,12 @@ export interface ExpandedSpliceRouting {
   requests: RouteRequest[];
   obstacles: RouteObstacle[];
   geometries: Map<string, SpliceFanInGeometry>;
+}
+
+interface IncidentBranch {
+  requestId: string;
+  end: 'source' | 'target';
+  other: RouteTerminal;
 }
 
 function isSpliceTerminal(terminal: RouteTerminal): boolean {
@@ -118,9 +130,6 @@ export function buildSpliceFanInGeometry(
   const blockedSide = blockedConnectorSide(nodeId, logicalCenter, obstacles);
   const availableSides = SIDES.filter((side) => side !== blockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
-  // Connector-near junctions get one spare landing slot per usable side because
-  // their label and neighbouring connector can legitimately make one slot
-  // unattractive without making the electrical splice unroutable.
   const portsPerSide = basePerSide + (blockedSide ? 1 : 0);
   const size = Math.max(
     SPLICE_FANIN_MIN_LENGTH,
@@ -160,6 +169,120 @@ function endpointDegrees(requests: RouteRequest[]): Map<string, { count: number;
   return degrees;
 }
 
+function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBranch[] {
+  const result: IncidentBranch[] = [];
+  for (const request of requests) {
+    if (request.source.nodeId === nodeId) result.push({ requestId: request.id, end: 'source', other: request.target });
+    if (request.target.nodeId === nodeId) result.push({ requestId: request.id, end: 'target', other: request.source });
+  }
+  return result;
+}
+
+function opposite(side: CardinalSide): CardinalSide {
+  if (side === 'left') return 'right';
+  if (side === 'right') return 'left';
+  if (side === 'top') return 'bottom';
+  return 'top';
+}
+
+function preferredSide(center: RoutePoint, other: RoutePoint): CardinalSide {
+  const dx = other.x - center.x;
+  const dy = other.y - center.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+  return dy < 0 ? 'top' : 'bottom';
+}
+
+function portStubBlocked(nodeId: string, port: RouteTerminalOption, obstacles: RouteObstacle[]): boolean {
+  const stubEnd = outward(port.point, port.side, MIN_BEND_SPACING);
+  const segment = routeSegments([port.point, stubEnd])[0];
+  if (!segment) return true;
+  return obstacles.some((obstacle) => obstacle.nodeId !== nodeId && segmentCrossesObstacle(segment, obstacle));
+}
+
+function landingCost(geometry: SpliceFanInGeometry, branch: IncidentBranch, port: RouteTerminalOption, obstacles: RouteObstacle[], portIndex: number): number {
+  const other = centerOfTerminal(branch.other);
+  const preferred = preferredSide(geometry.logicalCenter, other);
+  let direction = 0;
+  if (port.side === opposite(preferred)) direction = OPPOSITE_SIDE_COST;
+  else if (port.side !== preferred) direction = ORTHOGONAL_SIDE_COST;
+  const blocked = portStubBlocked(geometry.nodeId, port, obstacles) ? BLOCKED_PORT_COST : 0;
+  return blocked + direction + manhattan(other, port.point) + portIndex * 0.001;
+}
+
+/** Rectangular Hungarian assignment, rows <= columns. Returns one unique column per row. */
+function minimumCostAssignment(cost: number[][]): number[] {
+  const rowCount = cost.length;
+  const columnCount = cost[0]?.length ?? 0;
+  if (!rowCount || columnCount < rowCount) return [];
+  const u = new Array(rowCount + 1).fill(0);
+  const v = new Array(columnCount + 1).fill(0);
+  const p = new Array(columnCount + 1).fill(0);
+  const way = new Array(columnCount + 1).fill(0);
+
+  for (let row = 1; row <= rowCount; row += 1) {
+    p[0] = row;
+    let column0 = 0;
+    const minv = new Array(columnCount + 1).fill(Number.POSITIVE_INFINITY);
+    const used = new Array(columnCount + 1).fill(false);
+    do {
+      used[column0] = true;
+      const row0 = p[column0];
+      let delta = Number.POSITIVE_INFINITY;
+      let column1 = 0;
+      for (let column = 1; column <= columnCount; column += 1) {
+        if (used[column]) continue;
+        const current = cost[row0 - 1][column - 1] - u[row0] - v[column];
+        if (current < minv[column]) {
+          minv[column] = current;
+          way[column] = column0;
+        }
+        if (minv[column] < delta) {
+          delta = minv[column];
+          column1 = column;
+        }
+      }
+      for (let column = 0; column <= columnCount; column += 1) {
+        if (used[column]) {
+          u[p[column]] += delta;
+          v[column] -= delta;
+        } else minv[column] -= delta;
+      }
+      column0 = column1;
+    } while (p[column0] !== 0);
+
+    do {
+      const column1 = way[column0];
+      p[column0] = p[column1];
+      column0 = column1;
+    } while (column0 !== 0);
+  }
+
+  const assignment = new Array(rowCount).fill(-1);
+  for (let column = 1; column <= columnCount; column += 1) {
+    if (p[column] > 0 && p[column] <= rowCount) assignment[p[column] - 1] = column - 1;
+  }
+  return assignment;
+}
+
+function assignLandingPorts(
+  requests: RouteRequest[],
+  obstacles: RouteObstacle[],
+  geometries: Map<string, SpliceFanInGeometry>,
+): Map<string, RouteTerminalOption> {
+  const assignments = new Map<string, RouteTerminalOption>();
+  for (const [nodeId, geometry] of geometries) {
+    const branches = incidentBranches(nodeId, requests)
+      .sort((left, right) => left.requestId.localeCompare(right.requestId, undefined, { numeric: true }) || left.end.localeCompare(right.end));
+    const costs = branches.map((branch) => geometry.ports.map((port, index) => landingCost(geometry, branch, port, obstacles, index)));
+    const selected = minimumCostAssignment(costs);
+    branches.forEach((branch, index) => {
+      const port = geometry.ports[selected[index]];
+      if (port) assignments.set(`${branch.requestId}:${branch.end}`, port);
+    });
+  }
+  return assignments;
+}
+
 export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: RouteObstacle[]): ExpandedSpliceRouting {
   const geometries = new Map<string, SpliceFanInGeometry>();
   for (const [nodeId, degree] of endpointDegrees(requests)) {
@@ -168,13 +291,14 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
   }
   if (!geometries.size) return { requests, obstacles, geometries };
 
+  const assignments = assignLandingPorts(requests, obstacles, geometries);
   const expandedRequests = requests.map((request) => ({
     ...request,
     source: geometries.has(request.source.nodeId)
-      ? { nodeId: request.source.nodeId, options: geometries.get(request.source.nodeId)!.ports }
+      ? { nodeId: request.source.nodeId, options: [assignments.get(`${request.id}:source`) ?? geometries.get(request.source.nodeId)!.ports[0]] }
       : request.source,
     target: geometries.has(request.target.nodeId)
-      ? { nodeId: request.target.nodeId, options: geometries.get(request.target.nodeId)!.ports }
+      ? { nodeId: request.target.nodeId, options: [assignments.get(`${request.id}:target`) ?? geometries.get(request.target.nodeId)!.ports[0]] }
       : request.target,
   }));
   const expandedObstacles = [...obstacles, ...[...geometries.values()].map((geometry) => geometry.envelope)];
