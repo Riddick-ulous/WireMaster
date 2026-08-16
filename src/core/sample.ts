@@ -46,6 +46,10 @@ export function createDemoProject(): Project {
         [ecu.id]: { x: 80, y: 110 },
         [dash.id]: { x: 620, y: 110 },
       },
+      connectorRotations: {
+        [ecu.id]: 0,
+        [dash.id]: 180,
+      },
       splicePositions: {},
     },
   };
@@ -90,7 +94,7 @@ export function createBlankProject(): Project {
       connectors: [],
       splices: [],
       wires: [],
-      viewerLayout: { connectorPositions: {}, splicePositions: {} },
+      viewerLayout: { connectorPositions: {}, connectorRotations: {}, splicePositions: {} },
     }],
     counters: { connector: 1, wire: 1, splice: 1 },
   };
