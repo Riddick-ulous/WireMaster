@@ -74,6 +74,12 @@ function equalPoint(left: RoutePoint, right: RoutePoint): boolean {
   return Math.abs(left.x - right.x) < EPSILON && Math.abs(left.y - right.y) < EPSILON;
 }
 
+function sameDirection(a: RoutePoint, b: RoutePoint, c: RoutePoint, sameX: boolean, sameY: boolean): boolean {
+  if (sameX) return (b.y - a.y) * (c.y - b.y) >= -EPSILON;
+  if (sameY) return (b.x - a.x) * (c.x - b.x) >= -EPSILON;
+  return false;
+}
+
 function simplifyPoints(input: RoutePoint[]): RoutePoint[] {
   const deduped: RoutePoint[] = [];
   for (const point of input) {
@@ -87,7 +93,7 @@ function simplifyPoints(input: RoutePoint[]): RoutePoint[] {
       const b = result[result.length - 1];
       const sameX = Math.abs(a.x - b.x) < EPSILON && Math.abs(b.x - point.x) < EPSILON;
       const sameY = Math.abs(a.y - b.y) < EPSILON && Math.abs(b.y - point.y) < EPSILON;
-      if (!sameX && !sameY) break;
+      if (!sameDirection(a, b, point, sameX, sameY)) break;
       result.pop();
     }
     result.push(point);
@@ -287,7 +293,6 @@ function laneCandidates(
     values.push(maxCoord + OUTSIDE_MARGIN + step * LANE_SPACING);
   }
 
-  // Existing tracks are useful landmarks: try a clean lane immediately beside them.
   for (const segment of reserved) {
     if ((axis === 'x' && segment.orientation !== 'v') || (axis === 'y' && segment.orientation !== 'h')) continue;
     const coordinate = axis === 'x' ? segment.a.x : segment.a.y;
