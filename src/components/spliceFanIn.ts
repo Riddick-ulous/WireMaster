@@ -13,6 +13,7 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
+import { CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX } from './connectorNearSpliceLayout';
 
 export const SPLICE_PORT_PITCH = 18;
 export const SPLICE_FANIN_MIN_LENGTH = 28;
@@ -78,14 +79,8 @@ function sideTowardObstacle(point: RoutePoint, obstacle: RouteObstacle): Cardina
   const horizontalGap = point.x < left ? left - point.x : point.x > right ? point.x - right : 0;
   const verticalGap = point.y < top ? top - point.y : point.y > bottom ? point.y - bottom : 0;
 
-  // If the point projects onto one axis of the rectangle, the blocked side is
-  // unambiguous. This is the normal connector-near case and must not be
-  // confused by a numerically closer top/bottom edge line.
   if (horizontalGap > 0 && verticalGap === 0) return point.x > right ? 'left' : 'right';
   if (verticalGap > 0 && horizontalGap === 0) return point.y > bottom ? 'top' : 'bottom';
-
-  // For a truly diagonal placement choose the dominant direction from the
-  // splice toward the nearest rectangle corner.
   if (horizontalGap >= verticalGap) return point.x > right ? 'left' : 'right';
   return point.y > bottom ? 'top' : 'bottom';
 }
@@ -134,19 +129,10 @@ export function buildSpliceFanInGeometry(
   if (!isSpliceTerminal(terminal)) return null;
   const logicalCenter = centerOfTerminal(terminal);
   const blockedSide = blockedConnectorSide(nodeId, logicalCenter, obstacles);
-  // Free splices need expansion only above their four physical sides. A
-  // connector-near splice has three usable external sides because the anchor
-  // occupies the connector-facing direction. Two external branches still fit
-  // naturally after radial staggering; from three external branches onward we
-  // create the controlled three-sided junction zone.
   const needsEnvelope = blockedSide ? branchCount >= 3 : branchCount > 4;
   if (!needsEnvelope) return null;
   const availableSides = SIDES.filter((side) => side !== blockedSide);
   const basePerSide = Math.ceil(branchCount / availableSides.length);
-  // Keep the common 4-wire connector-near case compact: three external
-  // branches need exactly one landing on right/top/bottom. Extra ports are
-  // added only for genuinely dense connector-near junctions; otherwise their
-  // envelopes would overlap adjacent one-grid-staggered splice zones.
   const portsPerSide = basePerSide + (blockedSide && branchCount > availableSides.length * 2 ? 1 : 0);
   const size = Math.max(
     SPLICE_FANIN_MIN_LENGTH,
@@ -300,6 +286,18 @@ function assignLandingPorts(
   return assignments;
 }
 
+function routingObstaclesForJunctions(obstacles: RouteObstacle[], geometries: Map<string, SpliceFanInGeometry>): RouteObstacle[] {
+  return obstacles.map((obstacle) => {
+    if (!obstacle.nodeId || (obstacle.kind !== 'node' && obstacle.kind !== undefined)) return obstacle;
+    const geometry = geometries.get(obstacle.nodeId);
+    if (!geometry?.blockedSide) return obstacle;
+    // Only the small physical marker gets the local clearance exception. The
+    // connector, labels and fan-in envelope remain separate hard obstacles.
+    if (obstacle.width >= 40 || obstacle.height >= 40) return obstacle;
+    return { ...obstacle, clearance: CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX };
+  });
+}
+
 export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: RouteObstacle[]): ExpandedSpliceRouting {
   const geometries = new Map<string, SpliceFanInGeometry>();
   for (const [nodeId, degree] of endpointDegrees(requests)) {
@@ -308,7 +306,8 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
   }
   if (!geometries.size) return { requests, obstacles, geometries };
 
-  const assignments = assignLandingPorts(requests, obstacles, geometries);
+  const localObstacles = routingObstaclesForJunctions(obstacles, geometries);
+  const assignments = assignLandingPorts(requests, localObstacles, geometries);
   const expandedRequests = requests.map((request) => ({
     ...request,
     source: geometries.has(request.source.nodeId)
@@ -318,7 +317,7 @@ export function expandSpliceFanInRouting(requests: RouteRequest[], obstacles: Ro
       ? { nodeId: request.target.nodeId, options: [assignments.get(`${request.id}:target`) ?? geometries.get(request.target.nodeId)!.ports[0]] }
       : request.target,
   }));
-  const expandedObstacles = [...obstacles, ...[...geometries.values()].map((geometry) => geometry.envelope)];
+  const expandedObstacles = [...localObstacles, ...[...geometries.values()].map((geometry) => geometry.envelope)];
   return { requests: expandedRequests, obstacles: expandedObstacles, geometries };
 }
 
