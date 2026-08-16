@@ -118,11 +118,11 @@ function blockedConnectorSide(nodeId: string, center: RoutePoint, obstacles: Rou
 }
 
 /**
- * Adjacent connector-near splices are radially staggered. The outer splice must
- * not send a mandatory 28 px terminal stub transversely back toward the inner
- * splice: that creates an unavoidable near-junction crossing with the inner
- * splice's outward branch. Detect the nearer-to-connector small splice and
- * reserve the transverse side facing it on the outer junction only.
+ * Adjacent connector-near splices are radially staggered. The transverse side
+ * pointing at the neighbouring junction is reserved on BOTH splices. Otherwise
+ * their mandatory 28 px terminal runs can meet in the narrow gap before either
+ * branch is allowed to bend. This makes neighbouring junctions fan away from
+ * one another rather than asking the global router to untangle their stubs.
  */
 function secondaryBlockedNeighborSide(
   nodeId: string,
@@ -145,15 +145,14 @@ function secondaryBlockedNeighborSide(
       const transverseDelta = horizontalConnector ? Math.abs(otherCenter.y - center.y) : Math.abs(otherCenter.x - center.x);
       return { obstacle, otherCenter, otherConnectorDistance, radialDelta, transverseDelta };
     })
-    .filter((item) => item.otherConnectorDistance + 0.25 < connector.distance
-      && item.radialDelta <= ADJACENT_SPLICE_RADIAL_LIMIT
+    .filter((item) => item.radialDelta <= ADJACENT_SPLICE_RADIAL_LIMIT
       && item.transverseDelta <= ADJACENT_SPLICE_TRANSVERSE_LIMIT)
     .sort((a, b) => manhattan(center, a.otherCenter) - manhattan(center, b.otherCenter));
 
-  const inner = candidates[0];
-  if (!inner) return null;
-  if (horizontalConnector) return inner.otherCenter.y < center.y ? 'top' : 'bottom';
-  return inner.otherCenter.x < center.x ? 'left' : 'right';
+  const neighbour = candidates[0];
+  if (!neighbour) return null;
+  if (horizontalConnector) return neighbour.otherCenter.y < center.y ? 'top' : 'bottom';
+  return neighbour.otherCenter.x < center.x ? 'left' : 'right';
 }
 
 function envelopeRect(center: RoutePoint, size: number, blockedSide: CardinalSide | null): RouteObstacle {
