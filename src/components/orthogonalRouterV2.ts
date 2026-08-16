@@ -38,6 +38,8 @@ const RIPUP_MAX_PASSES = 3;
 const CRAMPED_DEPARTURE_COST = 2;
 const ORTHOGONAL_DEPARTURE_COST = 1;
 const OPPOSITE_DEPARTURE_COST = 3;
+const DEPARTURE_LOOKAHEAD = 2 * MIN_BEND_SPACING;
+const DEPARTURE_HALF_WIDTH = 1.5 * MIN_BEND_SPACING;
 
 function emptyMetric(): BatchMetric { return { unrouted: 0, crossings: 0, churn: 0, natural: 0, bends: 0, length: 0 } }
 function addMetric(batch: BatchMetric, metric: CandidateMetric): BatchMetric {
@@ -89,13 +91,27 @@ function preferredDepartureSide(from: RoutePoint, to: RoutePoint): CardinalSide 
   return dy < 0 ? 'top' : 'bottom';
 }
 
+function obstacleCongestsDeparture(option: RouteTerminalOption, obstacle: RouteObstacle): boolean {
+  const obstaclePoint = { x: obstacle.x + obstacle.width / 2, y: obstacle.y + obstacle.height / 2 };
+  const dx = obstaclePoint.x - option.point.x;
+  const dy = obstaclePoint.y - option.point.y;
+  let forward: number;
+  let transverse: number;
+  if (option.side === 'right') { forward = dx; transverse = Math.abs(dy); }
+  else if (option.side === 'left') { forward = -dx; transverse = Math.abs(dy); }
+  else if (option.side === 'bottom') { forward = dy; transverse = Math.abs(dx); }
+  else { forward = -dy; transverse = Math.abs(dx); }
+  return forward > 0 && forward <= DEPARTURE_LOOKAHEAD && transverse <= DEPARTURE_HALF_WIDTH;
+}
+
 /**
  * Multi-side terminals are splice/junction terminals. A formally valid first
  * 28 px run can still be a poor departure when the next routing cell is already
  * occupied by a neighbouring node: the wire then has to make an immediate
- * dogleg around that node. Prefer a clear side that points toward the remote
- * endpoint, but allow an orthogonal side when it avoids such local congestion.
- * Single-option connector terminals are unaffected.
+ * dogleg around that node or conflicts with that neighbour's terminal stub.
+ * Prefer a clear side that points toward the remote endpoint, but allow an
+ * orthogonal side when it avoids such local congestion. Single-option
+ * connector terminals are unaffected.
  */
 function terminalDeparturePenalty(
   terminal: RouteTerminal,
@@ -109,13 +125,13 @@ function terminalDeparturePenalty(
   if (option.side === oppositeSide(preferred)) direction = OPPOSITE_DEPARTURE_COST;
   else if (option.side !== preferred) direction = ORTHOGONAL_DEPARTURE_COST;
 
-  const corridorEnd = outward(option.point, option.side, 2 * MIN_BEND_SPACING);
+  const corridorEnd = outward(option.point, option.side, DEPARTURE_LOOKAHEAD);
   const corridor = routeSegments([option.point, corridorEnd])[0];
   if (!corridor) return direction + CRAMPED_DEPARTURE_COST;
   const cramped = obstacles.some((obstacle) => {
     if (obstacle.kind !== 'node' && obstacle.kind !== undefined) return false;
     if (obstacle.nodeId === terminal.nodeId || obstacle.nodeId === other.nodeId) return false;
-    return segmentCrossesObstacle(corridor, obstacle);
+    return segmentCrossesObstacle(corridor, obstacle) || obstacleCongestsDeparture(option, obstacle);
   });
   return direction + (cramped ? CRAMPED_DEPARTURE_COST : 0);
 }
