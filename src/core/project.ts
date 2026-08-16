@@ -153,6 +153,34 @@ export function setSpliceMembers(project: Project, harnessId: UUID, spliceId: UU
   if (splice.status === 'ORPHANED') splice.status = 'NEEDS_REVIEW';
 }
 
+export function setSplicePinMembers(project: Project, harnessId: UUID, spliceId: UUID, pinEndpoints: PinEndpoint[]): void {
+  const harness = harnessById(project, harnessId);
+  const splice = harness.splices.find((item) => item.id === spliceId);
+  if (!splice) throw new Error(`Unknown splice ${spliceId}`);
+  if (splice.status === 'ORPHANED') throw new Error('Cannot edit an orphaned splice');
+
+  const unique = new Map<string, PinEndpoint>();
+  for (const endpoint of pinEndpoints) {
+    validateMemberEndpoint(harness, splice, endpoint);
+    const anchoredByOther = harness.splices.find((other) => other.id !== splice.id
+      && other.status !== 'ORPHANED'
+      && other.anchorPinId === endpoint.pinId);
+    if (anchoredByOther) {
+      throw new Error(`That pin is the physical location of ${anchoredByOther.displayId} and cannot be moved as a branch.`);
+    }
+    unique.set(endpointKey(endpoint), endpoint);
+  }
+
+  const selectedKeys = new Set(unique.keys());
+  for (const other of harness.splices) {
+    if (other.id === splice.id || other.netId !== splice.netId || other.status === 'ORPHANED') continue;
+    other.memberEndpoints = other.memberEndpoints.filter((endpoint) => endpoint.kind !== 'pin' || !selectedKeys.has(endpointKey(endpoint)));
+  }
+
+  const spliceLinks = splice.memberEndpoints.filter((endpoint) => endpoint.kind === 'splice');
+  splice.memberEndpoints = [...spliceLinks, ...unique.values()];
+}
+
 export function addSpliceMember(project: Project, harnessId: UUID, spliceId: UUID, endpoint: WireEndpoint): void {
   const harness = harnessById(project, harnessId);
   const splice = harness.splices.find((item) => item.id === spliceId);
@@ -203,7 +231,7 @@ export function createConnectorSpliceForNet(project: Project, harnessId: UUID, a
   if (!anchor.pin.netId) throw new Error('Assign a net before creating a splice');
 
   const existingTopology = harness.splices.some((splice) => splice.netId === anchor.pin.netId && splice.status !== 'ORPHANED');
-  if (existingTopology) throw new Error('This net already has splice topology. Add another splice by explicitly choosing the upstream splice and moved branches.');
+  if (existingTopology) throw new Error('This net already has splice topology. Add another splice by explicitly choosing the existing splice and moved wires.');
 
   const members: PinEndpoint[] = [];
   for (const connector of harness.connectors) {
@@ -244,7 +272,7 @@ export function createFreeSpliceForNet(project: Project, harnessId: UUID, netId:
   const harness = harnessById(project, harnessId);
   if (!project.nets.some((net) => net.id === netId)) throw new Error(`Unknown net ${netId}`);
   if (harness.splices.some((splice) => splice.netId === netId && splice.status !== 'ORPHANED')) {
-    throw new Error('This net already has splice topology. Extend it by explicitly selecting the upstream splice and branches.');
+    throw new Error('This net already has splice topology. Insert the free splice into an existing wire instead.');
   }
 
   const members: PinEndpoint[] = [];
@@ -257,6 +285,43 @@ export function createFreeSpliceForNet(project: Project, harnessId: UUID, netId:
   return createFreeSplice(project, harnessId, netId, members);
 }
 
+function removeStoredTopologyEdge(harness: SubHarness, a: WireEndpoint, b: WireEndpoint): void {
+  const tryRemove = (spliceEndpoint: WireEndpoint, other: WireEndpoint): boolean => {
+    if (spliceEndpoint.kind !== 'splice') return false;
+    const splice = harness.splices.find((item) => item.id === spliceEndpoint.spliceId);
+    if (!splice) return false;
+    if (other.kind === 'pin' && splice.placement === 'CONNECTOR' && splice.anchorPinId === other.pinId) {
+      throw new Error(`The selected wire is the short connector-to-${splice.displayId} stub. Choose a harness-side wire instead.`);
+    }
+    const before = splice.memberEndpoints.length;
+    const otherKey = endpointKey(other);
+    splice.memberEndpoints = splice.memberEndpoints.filter((endpoint) => endpointKey(endpoint) !== otherKey);
+    return splice.memberEndpoints.length !== before;
+  };
+
+  tryRemove(a, b);
+  tryRemove(b, a);
+}
+
+export function insertFreeSpliceOnWire(project: Project, harnessId: UUID, wireId: UUID): SpliceInstance {
+  const harness = harnessById(project, harnessId);
+  const wire = harness.wires.find((item) => item.id === wireId);
+  if (!wire) throw new Error(`Unknown wire ${wireId}`);
+  if (wire.status !== 'ACTIVE') throw new Error('A free splice can only be inserted into an active wire.');
+
+  const oldA = structuredClone(wire.endpointA);
+  const oldB = structuredClone(wire.endpointB);
+  removeStoredTopologyEdge(harness, oldA, oldB);
+  const created = createFreeSplice(project, harnessId, wire.netId, [oldA, oldB]);
+  const createdEndpoint: WireEndpoint = { kind: 'splice', spliceId: created.id };
+
+  wire.lastEndpointSnapshot = `${endpointKey(oldA)}|${endpointKey(oldB)}|${wire.netId}`;
+  wire.endpointA = oldA;
+  wire.endpointB = createdEndpoint;
+  wire.status = 'ACTIVE';
+  return created;
+}
+
 export function createConnectorSpliceFromSplice(
   project: Project,
   harnessId: UUID,
@@ -266,19 +331,19 @@ export function createConnectorSpliceFromSplice(
 ): SpliceInstance {
   const harness = harnessById(project, harnessId);
   const upstream = harness.splices.find((splice) => splice.id === upstreamSpliceId);
-  if (!upstream) throw new Error(`Unknown upstream splice ${upstreamSpliceId}`);
+  if (!upstream) throw new Error(`Unknown existing splice ${upstreamSpliceId}`);
   if (upstream.status === 'ORPHANED') throw new Error('Cannot branch from an orphaned splice');
 
   const anchor = connectorAndPinInHarness(harness, anchorPinId);
-  if (!anchor || anchor.pin.netId !== upstream.netId) throw new Error('Anchor pin must exist in the same harness and net as the upstream splice');
+  if (!anchor || anchor.pin.netId !== upstream.netId) throw new Error('The splice location pin must exist in the same harness and net as the existing splice');
 
   const upstreamKeys = new Set(upstream.memberEndpoints.map(endpointKey));
   const anchorEndpoint: PinEndpoint = { kind: 'pin', connectorId: anchor.connector.id, pinId: anchor.pin.id };
-  if (!upstreamKeys.has(endpointKey(anchorEndpoint))) throw new Error('The chosen anchor pin is not currently connected to the upstream splice');
+  if (!upstreamKeys.has(endpointKey(anchorEndpoint))) throw new Error('The selected pin does not currently have a wire to that splice');
 
   for (const endpoint of branchesToMove) {
-    if (!upstreamKeys.has(endpointKey(endpoint))) throw new Error(`Branch ${endpointKey(endpoint)} is not connected to the upstream splice`);
-    if (endpointKey(endpoint) === endpointKey(anchorEndpoint)) throw new Error('The anchor pin is moved implicitly and must not be listed as a branch');
+    if (!upstreamKeys.has(endpointKey(endpoint))) throw new Error(`Wire endpoint ${endpointKey(endpoint)} is not connected to the existing splice`);
+    if (endpointKey(endpoint) === endpointKey(anchorEndpoint)) throw new Error('The location wire moves automatically and must not also be selected');
   }
 
   const movedEndpoints = [anchorEndpoint, ...branchesToMove];
@@ -288,9 +353,9 @@ export function createConnectorSpliceFromSplice(
   const upstreamEndpoint: WireEndpoint = { kind: 'splice', spliceId: upstream.id };
   const createdEndpoint: WireEndpoint = { kind: 'splice', spliceId: created.id };
 
-  // The user explicitly selected these branches to move from the upstream
-  // splice. If exactly one persistent wire represents a selected branch, its
-  // identity can be rebound without inference; only S(upstream)↔S(new) is new.
+  // The user explicitly selected these wires to move from the existing splice.
+  // If exactly one persistent wire represents a selected branch, its identity
+  // can be rebound without inference; only the splice-to-splice link is new.
   for (const movedEndpoint of movedEndpoints) {
     const candidates = harness.wires.filter((wire) => {
       if (wire.netId !== upstream.netId) return false;
@@ -318,6 +383,20 @@ export function retireSplice(project: Project, harnessId: UUID, spliceId: UUID):
   const splice = harness.splices.find((item) => item.id === spliceId);
   if (!splice) throw new Error(`Unknown splice ${spliceId}`);
   splice.status = 'ORPHANED';
+}
+
+export function removeConnector(project: Project, harnessId: UUID, connectorId: UUID): void {
+  const harness = harnessById(project, harnessId);
+  const connector = harness.connectors.find((item) => item.id === connectorId);
+  if (!connector) throw new Error(`Unknown connector ${connectorId}`);
+
+  harness.connectors = harness.connectors.filter((item) => item.id !== connectorId);
+  delete harness.viewerLayout.connectorPositions[connectorId];
+  delete harness.viewerLayout.connectorRotations[connectorId];
+
+  for (const splice of harness.splices) {
+    if (splice.ownerConnectorId === connectorId) splice.status = 'ORPHANED';
+  }
 }
 
 export function addGenericConnector(project: Project, harnessId: UUID, pinCount = 4): ConnectorInstance {
