@@ -1,238 +1,199 @@
 # Electrical Viewer Orthogonal Routing Contract
 
-Status: M0.2 routing contract. This document is the source of truth for 90-degree wire routing behavior.
+Status: M0.2 routing contract. This document is the source of truth for Electrical Viewer wire-routing behavior.
 
 ## 1. Scope
 
-The routing engine is a layout-only subsystem. It must never change electrical topology, wire identity, splice membership, connector identity, or persistence semantics. Its only output is a visual route for an already-existing wire.
+The routing engine is a layout-only subsystem. It must never change electrical topology, wire identity, splice membership, connector identity, or persistence semantics. Its output for an electrically existing wire is either a deterministic routed polyline or explicit `UNROUTED`.
 
-The router receives:
+The router receives terminals, measured connector/splice geometry, persistent viewer positions/rotations, deterministic label/annotation keepouts and already reserved wire geometry.
 
-- wire terminals (pin or splice, including allowed departure side/handle),
-- connector and splice geometry,
-- persistent viewer positions/rotations,
-- fixed endpoint-label keepout rectangles,
-- already-reserved wire geometry.
+## 2. Hard geometry constraints
 
-The router returns a deterministic orthogonal polyline or `UNROUTED`.
-
-## 2. Hard constraints
-
-A route is invalid if any of these rules are violated. Hard constraints are never traded against route length, bend count, or crossing count.
+A route is invalid if any rule below is violated. No aesthetic or path-length improvement may trade against a hard constraint.
 
 ### R1 Orthogonal geometry
 
-Every segment is horizontal or vertical.
+Every routing segment is horizontal or vertical. Every internal vertex after simplification is exactly a 90-degree bend.
 
 ### R2 Terminal departure
 
-The first segment leaves the source terminal outward, normal to its connector/splice side. The final segment approaches the target terminal from its outward side.
+The first segment leaves a pin or splice outward, normal to the selected terminal side. The final segment approaches the target from its selected outward side.
 
-A wire may not bend immediately after a pin or splice. There is no exception for terminal stubs: the first bend must satisfy the same minimum straight-run requirement as any other bend transition, and it must also clear the endpoint label where a label exists.
+There is no special short-stub exception: a wire may not bend immediately after a connector pin or splice.
 
-### R3 Bend angle
+### R3 No U-turns
 
-After straight-line simplification, every internal route vertex is exactly a 90-degree turn. A 180-degree U-turn is forbidden.
-
-A legitimate obstacle detour such as `right -> down -> left` remains allowed because each individual bend is 90 degrees. Global monotonicity is intentionally not required.
+A 180-degree turn at a vertex is forbidden. A legitimate obstacle detour such as `right -> down -> left` is allowed because each individual bend is 90 degrees; global monotonicity is not required.
 
 ### R4 No self-intersection
 
-A wire may not cross, touch longitudinally, or overlap itself except at adjacent segment endpoints. A route may not later reuse a previously occupied segment of itself.
+A wire may not cross, touch longitudinally, overlap, or later reuse its own non-adjacent route geometry.
 
-### R5 Minimum straight run between bends
+### R5 Minimum straight run
 
-Every straight run between two bends must be at least `MIN_BEND_SPACING = 28 px` at viewer scale 1.0.
+`MIN_BEND_SPACING = 28 px` at viewer scale 1.0.
 
-The first run from a terminal to the first bend and the final run from the last bend to a terminal must also be at least 28 px, unless a larger endpoint-label clearance requirement applies.
+Every straight run between two bends must be at least 28 px. The first run from a terminal to the first bend and the final run from the last bend to a terminal must also be at least 28 px, or longer when a label/annotation clearance requires it.
 
 ### R6 Element keepout
 
-Connector and splice bodies are hard obstacles. The route centerline must remain at least `NODE_CLEARANCE = 14 px` outside the measured element rectangle, except for the straight terminal run entering or leaving its owning endpoint.
+Connector and splice bodies are hard obstacles. The route centerline must remain at least `NODE_CLEARANCE = 14 px` outside their measured rectangles, except for the owning straight terminal run entering/leaving that element.
 
-### R7 Fixed endpoint-label geometry
+### R7 Fixed connector-pin wire labels
 
-A visible pin-end wire label is anchored directly at its connector pin, in the same general location used by the current viewer.
+A visible endpoint label (`W# · gauge · color`) is fixed at its connector pin rather than being placed by the router.
 
-For a connector side where the wire leaves horizontally, the label is placed above the outgoing wire, close to the connector, with the wire and label visually forming the corner area immediately outside the pin.
+For a normal right-facing pin the label sits directly above the outgoing wire, close to the connector, so label and wire visually form the small corner area at the connector. Equivalent orientation-specific placement is used for left/top/bottom-facing pins.
 
-The wire must remain straight from the connector pin until it has fully passed the label keepout plus the required clearance. Therefore the first bend position is constrained by both:
+The label owns a padded hard keepout rectangle with `LABEL_CLEARANCE = 4 px`. Foreign wires may not enter this rectangle. The owning wire remains on its designated straight baseline and may not bend until it has fully cleared the label keepout.
 
-- `MIN_BEND_SPACING`, and
-- the far edge of the endpoint-label keepout.
+Therefore the first/last straight requirement is:
 
-The label does not float to another segment and is not selected by the router. Its placement is deterministic from the terminal geometry.
+`max(MIN_BEND_SPACING, distance required to clear the endpoint label)`.
 
-The label rectangle is derived from:
+The label never migrates to a later segment to make routing easier. If the required straight exit cannot fit, that is a layout conflict and may make the wire `UNROUTED`.
 
-- text (`W# · gauge · color`),
-- rendered font metrics or a deterministic conservative width estimate,
-- endpoint orientation,
-- fixed label offset from the pin/wire,
-- `LABEL_CLEARANCE = 4 px` padding.
+### R8 Splice labels are keepouts
 
-No foreign wire may enter a label keepout. The owning wire may only occupy its designated straight baseline immediately below/alongside the label according to the endpoint orientation; it may not bend into or through the label rectangle.
+The visible splice annotation (`S# · nW`) is deterministic annotation geometry and owns a padded hard keepout. Routed wires may not pass through splice text.
 
-### R8 Wire-to-wire longitudinal overlap
+### R9 No longitudinal overlap between wires
 
 Two different wires may never share a collinear segment for positive length.
 
-### R9 Minimum parallel wire spacing
+### R10 Minimum parallel wire spacing
 
 Parallel wire segments whose projected extents overlap must have at least `MIN_WIRE_SPACING = 18 px` centerline distance, except for deliberate common electrical junction geometry at the same splice endpoint.
 
-### R10 Wire crossings
+### R11 Wire crossings
 
-Different wires may cross only as a true 90-degree crossing. T-junction touching, collinear touching/overlap, or ambiguous contact between electrically unrelated wires is forbidden.
+Different wires may cross only as a true 90-degree crossing. T-junction touching, endpoint touching between unrelated wires, collinear touching/overlap, or ambiguous electrical-looking contact is forbidden.
 
-Crossings are valid but strongly discouraged by the soft objective function.
+A valid crossing must also be at least `MIN_CROSSING_TO_BEND = 28 px` away from the nearest bend, connector terminal, splice/junction terminal or route endpoint on both crossing wires.
 
-### R11 No invalid fallback
+Crossings are permitted only when necessary and remain strongly discouraged by the global objective function.
 
-If no valid route exists, the engine returns `UNROUTED`. The viewer must not draw an older/local fallback route that bypasses routing constraints.
+### R12 No unsafe fallback
 
-An electrically active wire may therefore be graphically `UNROUTED` without changing its domain-level `WireInstance.status`.
+If no valid route exists, the routing result is `UNROUTED`. The viewer must not substitute an older local Manhattan path, Bézier path, or any other geometry that violates the contract.
+
+An electrically `ACTIVE` wire may therefore be graphically `UNROUTED` without changing `WireInstance.status`.
 
 ## 3. Global objective order
 
-Routing is optimized lexicographically. A lower-priority objective may never be improved by making a higher-priority objective worse.
+Routing is optimized lexicographically. A lower-priority objective may never improve by worsening a higher-priority objective.
 
-1. minimize the number of `UNROUTED` wires,
-2. minimize crossings with other wires,
-3. minimize route churn relative to an already-valid previous route,
+1. minimize number of `UNROUTED` wires,
+2. minimize wire crossings,
+3. minimize route churn relative to a still-valid previous route,
 4. minimize number of bends,
 5. minimize total Manhattan length,
-6. prefer the natural main axis implied by terminal sides,
-7. prefer clean parallel/bundled corridor placement when this does not violate minimum spacing.
+6. prefer the natural main direction implied by terminal sides,
+7. prefer clean parallel/bundled corridors while respecting spacing.
 
-The result must be deterministic for identical geometry.
+The result must be deterministic for identical input geometry. Wire display ID is only a final tie-breaker and must not give low-numbered wires permanent routing priority.
 
-Wire display ID is only a deterministic final tie-breaker; it must not give low-numbered wires permanent routing priority.
+## 4. Rendering contract
 
-## 4. Endpoint label contract
+The router returns the complete explicit polyline. The renderer does not reconstruct a different route from `axis/lane` hints.
 
-Endpoint labels are part of routing geometry, not decoration applied after routing.
+### 4.1 90-degree mode
 
-For each visible pin-end label the viewer computes one fixed label rectangle before routing. The label remains associated with that connector pin and does not migrate to an arbitrary later segment.
+Draw the routed polyline exactly.
 
-For the normal right-facing connector case the intended relationship is approximately:
+### 4.2 Smooth mode
 
-```text
-connector pin
-      ●──────────────────────── wire
-       W7 · 0.35 · GREEN
-       ^ label sits just above the outgoing wire, close to the connector
-```
+Use the same routed polyline and only round its corners visually. Smooth mode must not run an independent Bézier routing engine.
 
-The exact text baseline/offset is a renderer detail, but the router receives the final padded rectangle and must keep the first run straight until the route has cleared that rectangle.
+### 4.3 Dragging and preview
 
-Equivalent orientation-specific placement is used for left/top/bottom-facing connector pins.
+During continuous connector/splice dragging or splice preview, a simplified temporary ghost route is allowed for responsiveness. On drop/commit, the full router runs and all hard constraints apply.
 
-## 5. Planner architecture
-
-The target architecture is a Manhattan visibility/grid router rather than a fixed one-corridor template.
-
-1. Measure connector/splice rectangles.
-2. Construct deterministic endpoint-label rectangles.
-3. Inflate element obstacles by node clearance.
-4. Add label keepouts.
-5. Create candidate X/Y routing coordinates from terminals, mandatory first-run clearance points, obstacle boundaries, label boundaries and reserved wire corridors.
-6. Build axis-aligned traversable segments between visible coordinates.
-7. Search route states with incoming direction and current straight-run length so 180-degree turns and too-short bends are impossible by construction.
-8. Reject self-intersections, invalid wire contact, wire overlap and spacing violations as hard constraints.
-9. Score only valid routes using the global objective order.
-10. Route all wires globally/deterministically with bounded alternatives/backtracking or beam search so an early locally-good route may be replaced when it blocks later wires.
-11. Return explicit polylines and explicit `UNROUTED` entries.
-
-The renderer must never regenerate the route from a smaller `axis/lane` representation.
-
-## 6. Rendering and interaction contract
-
-### 6.1 90-degree view
-
-The renderer draws the exact polyline returned by the router.
-
-### 6.2 Smooth view
-
-Smooth view uses the same routed topology/polyline as the 90-degree view and only rounds the corners visually. It must not run an independent Bézier routing algorithm that can violate keepouts.
-
-### 6.3 Dragging
-
-During connector/splice dragging, a simplified/temporary ghost route is acceptable for responsiveness.
-
-On drag stop, the full routing engine runs and all hard constraints apply.
-
-### 6.4 Splice preview
-
-Ghost splice preview uses the same routing constraints as committed topology. A reduced-cost preview solver is allowed during continuous interaction, but the committed result must be validated/rerouted by the full engine.
-
-## 7. UNROUTED behavior
+## 5. UNROUTED behavior
 
 If a wire cannot be routed without violating a hard constraint:
 
-- the wire is not visually connected across the viewer,
-- the editor/viewer shows a visible routing warning at the top,
-- the warning identifies the affected wire(s),
-- electrical/domain connectivity is not changed,
-- the user must resolve the layout conflict, typically by moving connectors/splices farther apart or otherwise creating routing space.
+- do not draw a connected route between its endpoints,
+- show a visible routing warning at the top of the Electrical Viewer/editor area,
+- identify the affected wire IDs,
+- leave electrical/domain connectivity unchanged,
+- require the user to resolve the layout conflict, normally by moving connectors or splices farther apart and creating routing space.
 
-Unsafe fallback geometry is forbidden.
+The router must not invent a visually ugly or geometrically invalid exception merely to keep the line connected.
 
-## 8. Performance contract
+## 6. Planner architecture
 
-The router must have an automated stress/performance test.
+The V2 planner operates on explicit orthogonal candidate polylines rather than the legacy single `axis/lane` representation.
 
-Reference stress case:
+The planner shall:
+
+1. measure connector/splice rectangles,
+2. construct deterministic endpoint-label and splice-label keepouts,
+3. derive mandatory terminal straight distances,
+4. create useful X/Y corridor candidates from terminals, obstacle boundaries and already reserved wire corridors,
+5. reject hard-constraint violations before scoring,
+6. retain bounded alternative routes and/or use bounded backtracking/beam search so a locally attractive early wire can be changed when it blocks later wires,
+7. optimize globally in the objective order above,
+8. return a complete explicit polyline or `UNROUTED` for every requested wire.
+
+The candidate/search implementation may evolve toward a fuller Manhattan visibility/grid graph without changing this contract.
+
+## 7. Performance contract
+
+A deterministic automated baseline benchmark is mandatory.
+
+Hard CI/reference baseline:
 
 - 50 connectors,
 - 15 pins per connector,
-- 750 pin terminals total,
-- representative multi-wire connectivity and obstacle geometry,
-- full deterministic routing from a cold route state.
+- 750 pin terminals,
+- 375 simultaneous two-point wires,
+- connector body obstacles and endpoint-label keepouts included,
+- cold deterministic full routing,
+- zero `UNROUTED` wires in the baseline fixture,
+- elapsed routing time `< 1.0 s` on the CI/reference environment.
 
-Target on the CI/reference environment: complete full routing in `< 1.0 s`.
+The test reports route count, unrouted count and elapsed time. A denser splice-heavy fixture with roughly 750 routed segments may be measured separately and promoted to a hard gate once its stable reference budget is known.
 
-The performance test must report route count, unrouted count and elapsed time so regressions are diagnosable. The benchmark fixture must be deterministic.
+Continuous dragging does not need to execute the full stress-case optimizer on every mouse event; simplified ghost routing or throttled updates are allowed.
 
-Interactive dragging does not have to execute the full 750-terminal optimization on every mouse event; simplified ghost routes or throttled partial updates are allowed.
+## 8. Required regression tests
 
-## 9. Required regression tests
+The suite must cover at minimum:
 
-The routing test suite must cover at minimum:
-
-- no route through connector/splice keepouts,
-- fixed connector-pin label placement creates a hard keepout,
-- first bend occurs only after the complete endpoint label plus clearance,
-- no bend closer than 28 px to a terminal,
-- no two bends with less than 28 px straight run between them,
-- no longitudinal overlap between wires,
-- minimum parallel wire spacing,
-- only true 90-degree wire crossings,
+- connector/splice keepouts,
+- fixed connector-pin label keepouts,
+- splice-label keepouts,
+- first bend only after full label clearance,
+- no bend closer than 28 px to any terminal,
+- no two bends separated by less than 28 px,
 - no 180-degree U-turn,
 - no self-intersection/self-overlap,
-- deterministic output for identical geometry,
-- routing stability where a previous valid route still fits,
-- connector-near splice fan-out,
-- free-splice fan-out,
-- rotated connectors (0/90/180/270 degrees),
-- ghost preview obeying the same hard constraints,
-- explicit `UNROUTED` result when no valid route exists,
-- top-level routing warning for one or more `UNROUTED` wires,
-- stress/performance fixture with 50 connectors x 15 pins finishing in <1 s on the reference environment.
+- no longitudinal overlap between different wires,
+- at least 18 px parallel wire spacing,
+- only true 90-degree crossings,
+- at least 28 px crossing-to-bend/terminal distance,
+- deterministic output,
+- routing stability when a previous valid route still fits,
+- connector-near and free-splice fan-out,
+- connector rotations 0/90/180/270 degrees,
+- simplified preview followed by contract-valid committed reroute,
+- explicit `UNROUTED` with no unsafe rendered fallback,
+- top-level warning for one or more `UNROUTED` wires,
+- 50 × 15 / 375-wire performance fixture below 1 s.
 
-## 10. Persistence
+## 9. Persistence
 
-Connector and free-splice positions are persistent domain/viewer state.
-
-Generated route polylines are derived layout state and are not persisted for M0.2. They are regenerated deterministically from the persisted layout.
+Connector and free-splice positions are persistent viewer state. Generated route polylines are derived state and are regenerated deterministically; they are not persisted in M0.2.
 
 Manual locked waypoints/segments may be added later as explicit persistent routing constraints.
 
-## 11. Non-goals for M0.2
+## 10. Non-goals for M0.2
 
 - physical harness length estimation,
-- bend-radius / wire-diameter mechanics,
-- automatic twisted-pair bundle topology,
+- wire bend-radius mechanics,
+- automatic twisted-pair topology,
 - 3D routing,
-- changing electrical connectivity to make visual routing easier,
-- persistent manual wire waypoints in the first V2 router implementation.
+- changing electrical connectivity to improve visual routing,
+- persistent manual wire waypoints in the first V2 implementation.
