@@ -10,6 +10,7 @@ import {
   routeSegments,
   segmentCrossesObstacle,
   type CardinalSide,
+  type OrthogonalRouteResult,
   type RouteObstacle,
   type RouteRequest,
   type RouteTerminal,
@@ -42,6 +43,13 @@ function spliceTerminal(id: string, position: { x: number; y: number }): RouteTe
 
 function terminal(nodeId: string, key: string, side: CardinalSide, x: number, y: number): RouteTerminal {
   return { nodeId, options: [{ key, side, point: { x, y } }] };
+}
+
+function expectTargetSide(results: Map<string, OrthogonalRouteResult>, wireId: string, side: CardinalSide): void {
+  const result = results.get(wireId);
+  expect(result?.status, `${wireId} should route`).toBe('ROUTED');
+  if (!result || result.status !== 'ROUTED') return;
+  expect(result.targetSide).toBe(side);
 }
 
 describe('staggered adjacent connector-near splices', () => {
@@ -137,9 +145,9 @@ describe('staggered adjacent connector-near splices', () => {
     const results = planOrthogonalRoutesV2(requests, obstacles);
     for (const request of requests) expect(results.get(request.id)?.status, `${request.id} should route`).toBe('ROUTED');
 
-    expect(results.get('W5')?.status === 'ROUTED' ? results.get('W5')!.targetSide : null).toBe('bottom');
-    expect(results.get('W6')?.status === 'ROUTED' ? results.get('W6')!.targetSide : null).toBe('top');
-    expect(results.get('W8')?.status === 'ROUTED' ? results.get('W8')!.targetSide : null).toBe('right');
-    expect(results.get('W9')?.status === 'ROUTED' ? results.get('W9')!.targetSide : null).toBe('top');
+    expectTargetSide(results, 'W5', 'bottom');
+    expectTargetSide(results, 'W6', 'top');
+    expectTargetSide(results, 'W8', 'right');
+    expectTargetSide(results, 'W9', 'top');
   });
 });
