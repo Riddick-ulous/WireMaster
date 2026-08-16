@@ -18,7 +18,11 @@ import { CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX } from './connectorNearSpliceLa
 export const SPLICE_PORT_PITCH = 18;
 export const SPLICE_FANIN_MIN_LENGTH = 28;
 export const SPLICE_FANIN_PADDING = 14;
-const CONNECTOR_NEAR_THRESHOLD = 112;
+// The outer connector-near lane is 112 px from the connector body. The splice
+// center and measured/rendering tolerances add a few pixels, so keep enough
+// deterministic margin for that second lane. This remains a layout heuristic
+// until junction placement is passed explicitly as terminal metadata.
+const CONNECTOR_NEAR_THRESHOLD = 140;
 const FAN_KEY = '|fanin:';
 const BLOCKED_PORT_COST = 1_000_000;
 const OPPOSITE_SIDE_COST = 1_200;
@@ -291,8 +295,6 @@ function routingObstaclesForJunctions(obstacles: RouteObstacle[], geometries: Ma
     if (!obstacle.nodeId || (obstacle.kind !== 'node' && obstacle.kind !== undefined)) return obstacle;
     const geometry = geometries.get(obstacle.nodeId);
     if (!geometry?.blockedSide) return obstacle;
-    // Only the small physical marker gets the local clearance exception. The
-    // connector, labels and fan-in envelope remain separate hard obstacles.
     if (obstacle.width >= 40 || obstacle.height >= 40) return obstacle;
     return { ...obstacle, clearance: CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX };
   });
