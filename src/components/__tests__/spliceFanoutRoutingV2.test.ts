@@ -71,13 +71,6 @@ describe('connector-near splice fan-out routing', () => {
     ];
 
     const results = planOrthogonalRoutesV2(requests, obstacles);
-    console.info('[splice-fanout-debug]', requests.map((request) => {
-      const result = results.get(request.id);
-      return result?.status === 'ROUTED'
-        ? { id: request.id, status: result.status, source: result.sourceHandleId, target: result.targetHandleId, points: result.points }
-        : { id: request.id, status: result?.status ?? 'MISSING' };
-    }));
-
     const routes = requests.map((request) => {
       const result = results.get(request.id);
       expect(result?.status, `${request.id} should remain routable around connector-near splice geometry`).toBe('ROUTED');
