@@ -55,7 +55,7 @@ button:disabled { opacity: .38; }
 
 .viewer-canvas { min-height: 0; flex: 1; background: #0b0f14; }
 .viewer-connector { width: 180px; overflow: visible; border: 1px solid #3c4758; border-radius: 7px; background: #151b24; box-shadow: 0 8px 26px #0008; transition: box-shadow 120ms ease, outline-color 120ms ease; }
-.viewer-connector.horizontal { width: max-content; min-width: 180px; }
+.viewer-connector.horizontal { width: max-content; min-width: 0; }
 .react-flow__node.dragging .viewer-connector {
   outline: 2px solid #9c8aff;
   outline-offset: 4px;
@@ -72,28 +72,33 @@ button:disabled { opacity: .38; }
 .viewer-connector.vertical .viewer-pin:last-child { border-bottom: 0; }
 .viewer-connector.horizontal .viewer-pins { display: flex; }
 .viewer-connector.horizontal .viewer-pin {
-  width: 48px;
+  width: 32px;
   height: 92px;
   position: relative;
   display: flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: 5px;
-  padding: 8px 5px;
+  gap: 4px;
+  padding: 7px 3px;
   font-size: 9px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
   border-right: 1px solid #252c37;
 }
 .viewer-connector.horizontal .viewer-pin:last-child { border-right: 0; }
 .viewer-connector.horizontal .cavity,
 .viewer-connector.horizontal .pin-name {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
+  writing-mode: inherit;
+  text-orientation: inherit;
   white-space: nowrap;
-  max-height: 80px;
+}
+.viewer-connector.horizontal .pin-name {
+  max-inline-size: 68px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.viewer-connector.rotation-270 .viewer-pin { flex-direction: row-reverse; }
 .viewer-connector.rotation-270 .cavity,
 .viewer-connector.rotation-270 .pin-name { transform: rotate(180deg); }
 .cavity { color: #7f8da1; font-size: 9px; font-variant-numeric: tabular-nums; }
