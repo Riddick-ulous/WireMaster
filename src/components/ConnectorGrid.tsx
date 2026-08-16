@@ -10,6 +10,8 @@ interface GridRow {
   net: string;
 }
 
+type EditableGridField = 'pinName' | 'net';
+
 interface Props {
   connector: ConnectorInstance;
   nets: Net[];
@@ -36,6 +38,14 @@ function rowsEqual(left: GridRow, right: GridRow): boolean {
     && left.net === right.net;
 }
 
+function parseClipboardTsv(text: string): string[][] {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows = normalized.split('\n');
+  // Excel/Calc normally put one trailing line break on copied cell ranges.
+  if (rows.at(-1) === '') rows.pop();
+  return rows.map((row) => row.split('\t'));
+}
+
 export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, onEditPin, onBulkEditPins }: Props) {
   const tableHost = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<InstanceType<typeof Tabulator> | null>(null);
@@ -51,28 +61,62 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
     const host = tableHost.current;
     if (!host) return;
 
-    let rangePasteInProgress = false;
-    let pasteResetTimer: number | null = null;
+    const editableFields: EditableGridField[] = ['pinName', 'net'];
+    let activeCell: { rowId: UUID; field: EditableGridField } | null = null;
+    let table: InstanceType<typeof Tabulator> | null = null;
 
-    const markPasteStart = (event: ClipboardEvent) => {
+    const handlePaste = (event: ClipboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isCellEditor = Boolean(target?.closest('.tabulator-editing'))
         || target?.matches('input, textarea') === true;
 
-      // Pasting into an open input is a normal cell edit. Only suppress the
-      // per-cell callbacks when Tabulator itself is handling a selected range.
-      if (isCellEditor) return;
+      // An open Tabulator editor owns normal text paste inside its input.
+      if (isCellEditor || !activeCell || !table) return;
 
-      rangePasteInProgress = true;
-      if (pasteResetTimer !== null) window.clearTimeout(pasteResetTimer);
-      pasteResetTimer = window.setTimeout(() => {
-        rangePasteInProgress = false;
-        pasteResetTimer = null;
-      }, 0);
+      const clipboardText = event.clipboardData?.getData('text/plain') ?? '';
+      const matrix = parseClipboardTsv(clipboardText);
+      if (!matrix.length || !matrix.some((row) => row.length)) return;
+
+      const rows = table.getRows();
+      const startRowIndex = rows.findIndex((row) => (row.getData() as GridRow).id === activeCell?.rowId);
+      const startFieldIndex = editableFields.indexOf(activeCell.field);
+      if (startRowIndex < 0 || startFieldIndex < 0) return;
+
+      const edits: PinEdit[] = [];
+      for (let sourceRow = 0; sourceRow < matrix.length; sourceRow += 1) {
+        const targetRow = rows[startRowIndex + sourceRow];
+        if (!targetRow) break;
+
+        const rowData = targetRow.getData() as GridRow;
+        const edit: PinEdit = { pinId: rowData.id };
+        let touched = false;
+
+        for (let sourceColumn = 0; sourceColumn < matrix[sourceRow].length; sourceColumn += 1) {
+          const targetField = editableFields[startFieldIndex + sourceColumn];
+          if (!targetField) break;
+
+          const value = matrix[sourceRow][sourceColumn];
+          if (targetField === 'pinName') edit.pinName = value;
+          else edit.netName = value;
+          touched = true;
+        }
+
+        if (touched) edits.push(edit);
+      }
+
+      if (!edits.length) return;
+
+      // Tabulator's range paste intentionally tiles clipboard data to fill a
+      // selected target range. WireMaster instead uses Excel-style anchored
+      // paste: exact clipboard dimensions starting at the clicked cell.
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      onBulkEditPins(edits);
     };
-    host.addEventListener('paste', markPasteStart, true);
+    host.addEventListener('paste', handlePaste, true);
 
-    const table = new Tabulator(host, {
+    table = new Tabulator(host, {
       data: rowsFor(connector, nets),
       index: 'id',
       layout: 'fitColumns',
@@ -87,8 +131,9 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       selectableRangeRows: true,
       selectableRangeClearCells: true,
 
-      // Tabulator's documented spreadsheet clipboard setup. In particular,
-      // do not inject row/column headers into copied rectangular cell ranges.
+      // Tabulator remains responsible for range selection and copy. Paste is
+      // intercepted above because its built-in range action has fill/tiling
+      // semantics that are undesirable for harness editing.
       clipboard: true,
       clipboardCopyStyled: false,
       clipboardCopyConfig: {
@@ -106,39 +151,24 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
     });
     tableRef.current = table;
 
+    table.on('cellClick', (_event, cell) => {
+      const field = cell.getField();
+      if (field !== 'pinName' && field !== 'net') return;
+      const row = cell.getRow().getData() as GridRow;
+      activeCell = { rowId: row.id, field };
+    });
+
     table.on('cellEdited', (cell) => {
-      if (rangePasteInProgress) return;
       const row = cell.getRow().getData() as GridRow;
       if (cell.getField() === 'pinName') onEditPin(row.id, { pinName: String(cell.getValue() ?? '') });
       if (cell.getField() === 'net') onEditPin(row.id, { netName: String(cell.getValue() ?? '') });
     });
 
-    table.on('clipboardPasted', (_clipboard, _rowData, rows) => {
-      const edits: PinEdit[] = rows.map((row) => {
-        const item = row.getData() as GridRow;
-        return { pinId: item.id, pinName: String(item.pinName ?? ''), netName: String(item.net ?? '') };
-      });
-      rangePasteInProgress = false;
-      if (pasteResetTimer !== null) {
-        window.clearTimeout(pasteResetTimer);
-        pasteResetTimer = null;
-      }
-      if (edits.length) onBulkEditPins(edits);
-    });
-
-    table.on('clipboardPasteError', () => {
-      rangePasteInProgress = false;
-      if (pasteResetTimer !== null) {
-        window.clearTimeout(pasteResetTimer);
-        pasteResetTimer = null;
-      }
-    });
-
     return () => {
       tableRef.current = null;
-      host.removeEventListener('paste', markPasteStart, true);
-      if (pasteResetTimer !== null) window.clearTimeout(pasteResetTimer);
-      table.destroy();
+      host.removeEventListener('paste', handlePaste, true);
+      table?.destroy();
+      table = null;
     };
     // The table lifetime is tied to connector identity, not immutable project snapshots.
     // Prop changes are synchronized by the effect below without destroying the editor.
