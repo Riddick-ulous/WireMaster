@@ -114,7 +114,36 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       event.stopImmediatePropagation();
       onBulkEditPins(edits);
     };
+
+    const handleTypingStart = (event: KeyboardEvent) => {
+      if (!table || !activeCell) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+      if (host.querySelector('.tabulator-editing')) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+      const row = table.getRow(activeCell.rowId);
+      if (!row) return;
+      const cell = row.getCell(activeCell.field);
+      if (!cell) return;
+
+      // Spreadsheet semantics: typing while a cell is selected replaces its
+      // current contents and immediately starts editing with the typed key.
+      event.preventDefault();
+      const firstCharacter = event.key;
+      cell.edit();
+      requestAnimationFrame(() => {
+        const editor = cell.getElement().querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+        if (!editor) return;
+        editor.value = firstCharacter;
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        editor.setSelectionRange(firstCharacter.length, firstCharacter.length);
+      });
+    };
+
     host.addEventListener('paste', handlePaste, true);
+    host.addEventListener('keydown', handleTypingStart, true);
 
     table = new Tabulator(host, {
       data: rowsFor(connector, nets),
@@ -123,7 +152,8 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       height: Math.min(340, 42 + connector.pins.length * 34),
 
       // Spreadsheet interaction: a single click selects/focuses a cell or
-      // starts a drag range; a double click opens the text editor.
+      // starts a drag range; a double click opens the text editor. Printable
+      // typing on a selected editable cell is handled above and starts editing.
       editTriggerEvent: 'dblclick',
       editorEmptyValue: undefined,
       selectableRange: 1,
@@ -167,6 +197,7 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
     return () => {
       tableRef.current = null;
       host.removeEventListener('paste', handlePaste, true);
+      host.removeEventListener('keydown', handleTypingStart, true);
       table?.destroy();
       table = null;
     };
