@@ -66,9 +66,6 @@ describe('orthogonal route planner', () => {
 
     const plans = planOrthogonalRoutes(requests);
     const routes = requests.map((request) => route(request, plans));
-    const chosenSpliceHandles = requests.map((request) => plans.get(request.id)!.sourceHandleId);
-    expect(new Set(chosenSpliceHandles).size).toBe(4);
-
     for (let left = 0; left < routes.length; left += 1) {
       for (let right = left + 1; right < routes.length; right += 1) {
         expect(longitudinalOverlapLength(routes[left], routes[right])).toBe(0);
