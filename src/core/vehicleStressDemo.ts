@@ -103,7 +103,7 @@ function makeConnector(spec: VehicleConnectorSpec): ConnectorInstance {
     pins: Array.from({ length: spec.pinCount }, (_, index) => ({
       id: pinId(spec.displayId, index),
       cavity: String(index + 1),
-      pinName,
+      pinName: `IO_${String(index + 1).padStart(2, '0')}`,
       description: '',
       expectedNetClassId: null,
       netId: null,
