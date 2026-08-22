@@ -1,6 +1,5 @@
 import {
   VEHICLE_BUNDLE_SPECS,
-  VEHICLE_CONNECTOR_SPECS,
   VEHICLE_GRID_PX,
   createVehicleWireAssignments,
   type VehicleConnectorSpec,
@@ -11,6 +10,7 @@ import {
   type ConnectorLayoutPin,
   type ConnectorVisualLayout,
 } from './connectorBundleLayout';
+import { VEHICLE_PERIMETER_CONNECTOR_SPECS } from './vehiclePerimeterStressLayout';
 import { routeSegments, type OrthogonalRouteResult, type RouteObstacle, type RouteRequest, type RouteTerminal } from './routingGeometry';
 import { buildRouteBundles, type RouteBundle } from './routingBundles';
 
@@ -41,6 +41,8 @@ export interface VehicleRoutingMetrics {
 const CONNECTOR_WIDTH = 180;
 const HEADER_HEIGHT = 31;
 const PIN_PITCH = VEHICLE_GRID_PX;
+const HORIZONTAL_PIN_WIDTH = 32;
+const HORIZONTAL_PIN_HEIGHT = 92;
 const LABEL_WIDTH = 96;
 const LABEL_HEIGHT = 14;
 const LABEL_GAP = 8;
@@ -64,7 +66,7 @@ function remoteOrderHint(local: VehicleConnectorSpec, remote: VehicleConnectorSp
 
 export function buildVehicleConnectorLayouts(assignments: VehicleWireAssignment[]): Record<string, ConnectorVisualLayout> {
   const pinsByConnector = new Map<string, ConnectorLayoutPin[]>();
-  const specsByDisplayId = new Map(VEHICLE_CONNECTOR_SPECS.map((spec) => [spec.displayId, spec]));
+  const specsByDisplayId = new Map(VEHICLE_PERIMETER_CONNECTOR_SPECS.map((spec) => [spec.displayId, spec]));
   for (const assignment of assignments) {
     const bundleKey = visualGroupKey(assignment.bundleIndex);
     const aDisplayId = displayIdFromNodeId(assignment.aConnectorId);
@@ -91,7 +93,7 @@ export function buildVehicleConnectorLayouts(assignments: VehicleWireAssignment[
     pinsByConnector.set(assignment.bConnectorId, bPins);
   }
 
-  return Object.fromEntries(VEHICLE_CONNECTOR_SPECS.map((spec) => {
+  return Object.fromEntries(VEHICLE_PERIMETER_CONNECTOR_SPECS.map((spec) => {
     const elementId = connectorNodeId(spec.displayId);
     return [elementId, buildConnectorVisualLayout({
       elementId,
@@ -104,11 +106,12 @@ export function buildVehicleConnectorLayouts(assignments: VehicleWireAssignment[
 
 function connectorGeometry(spec: VehicleConnectorSpec, layout: ConnectorVisualLayout) {
   const position = connectorPosition(spec);
+  const horizontal = spec.rotation === 90 || spec.rotation === 270;
   return {
     x: position.x,
     y: position.y,
-    width: CONNECTOR_WIDTH,
-    height: HEADER_HEIGHT + layout.totalSlots * PIN_PITCH,
+    width: horizontal ? Math.max(CONNECTOR_WIDTH, layout.totalSlots * HORIZONTAL_PIN_WIDTH) : CONNECTOR_WIDTH,
+    height: horizontal ? HEADER_HEIGHT + HORIZONTAL_PIN_HEIGHT : HEADER_HEIGHT + layout.totalSlots * PIN_PITCH,
   };
 }
 
@@ -116,12 +119,22 @@ function pinTerminal(spec: VehicleConnectorSpec, pinIndex: number, layout: Conne
   const geometry = connectorGeometry(spec, layout);
   const visualSlot = layout.slotByCavityIndex.get(pinIndex);
   if (visualSlot === undefined) throw new Error(`${spec.displayId} cavity ${pinIndex + 1} has no visual slot`);
-  const y = geometry.y + HEADER_HEIGHT + visualSlot * PIN_PITCH + PIN_PITCH / 2;
   const nodeId = connectorNodeId(spec.displayId);
+
+  if (spec.rotation === 90) {
+    const x = geometry.x + visualSlot * HORIZONTAL_PIN_WIDTH + HORIZONTAL_PIN_WIDTH / 2;
+    return { nodeId, options: [{ key: `${nodeId}-p${pinIndex + 1}-bottom`, side: 'bottom', point: { x, y: geometry.y + geometry.height } }] };
+  }
+  if (spec.rotation === 270) {
+    const x = geometry.x + visualSlot * HORIZONTAL_PIN_WIDTH + HORIZONTAL_PIN_WIDTH / 2;
+    return { nodeId, options: [{ key: `${nodeId}-p${pinIndex + 1}-top`, side: 'top', point: { x, y: geometry.y } }] };
+  }
+
+  const y = geometry.y + HEADER_HEIGHT + visualSlot * PIN_PITCH + PIN_PITCH / 2;
   if (spec.rotation === 180) {
     return { nodeId, options: [{ key: `${nodeId}-p${pinIndex + 1}-left`, side: 'left', point: { x: geometry.x, y } }] };
   }
-  return { nodeId, options: [{ key: `${nodeId}-p${pinIndex + 1}-right`, side: 'right', point: { x: geometry.x + CONNECTOR_WIDTH, y } }] };
+  return { nodeId, options: [{ key: `${nodeId}-p${pinIndex + 1}-right`, side: 'right', point: { x: geometry.x + geometry.width, y } }] };
 }
 
 function endpointLabelObstacle(id: string, terminal: RouteTerminal): RouteObstacle {
@@ -129,18 +142,24 @@ function endpointLabelObstacle(id: string, terminal: RouteTerminal): RouteObstac
   if (option.side === 'left') {
     return { id, kind: 'label', x: option.point.x - LABEL_GAP - LABEL_WIDTH, y: option.point.y - LABEL_HEIGHT - 4, width: LABEL_WIDTH, height: LABEL_HEIGHT, clearance: 0 };
   }
-  return { id, kind: 'label', x: option.point.x + LABEL_GAP, y: option.point.y - LABEL_HEIGHT - 4, width: LABEL_WIDTH, height: LABEL_HEIGHT, clearance: 0 };
+  if (option.side === 'right') {
+    return { id, kind: 'label', x: option.point.x + LABEL_GAP, y: option.point.y - LABEL_HEIGHT - 4, width: LABEL_WIDTH, height: LABEL_HEIGHT, clearance: 0 };
+  }
+  if (option.side === 'top') {
+    return { id, kind: 'label', x: option.point.x - LABEL_HEIGHT - 4, y: option.point.y - LABEL_GAP - LABEL_WIDTH, width: LABEL_HEIGHT, height: LABEL_WIDTH, clearance: 0 };
+  }
+  return { id, kind: 'label', x: option.point.x + 4, y: option.point.y + LABEL_GAP, width: LABEL_HEIGHT, height: LABEL_WIDTH, clearance: 0 };
 }
 
 export function createVehicleStressRoutingFixture(): VehicleStressRoutingFixture {
-  const specsByDisplayId = new Map(VEHICLE_CONNECTOR_SPECS.map((spec) => [spec.displayId, spec]));
+  const specsByDisplayId = new Map(VEHICLE_PERIMETER_CONNECTOR_SPECS.map((spec) => [spec.displayId, spec]));
   const assignments = createVehicleWireAssignments();
   const connectorLayouts = buildVehicleConnectorLayouts(assignments);
   const requests: RouteRequest[] = [];
   const obstacles: RouteObstacle[] = [];
   const displayIds: Record<string, string> = {};
 
-  for (const spec of VEHICLE_CONNECTOR_SPECS) {
+  for (const spec of VEHICLE_PERIMETER_CONNECTOR_SPECS) {
     const nodeId = connectorNodeId(spec.displayId);
     const layout = connectorLayouts[nodeId];
     const geometry = connectorGeometry(spec, layout);
@@ -175,7 +194,7 @@ export function createVehicleStressRoutingFixture(): VehicleStressRoutingFixture
     displayIds,
     bundles,
     connectorLayouts,
-    totalPins: VEHICLE_CONNECTOR_SPECS.reduce((sum, spec) => sum + spec.pinCount, 0),
+    totalPins: VEHICLE_PERIMETER_CONNECTOR_SPECS.reduce((sum, spec) => sum + spec.pinCount, 0),
     usedPins: assignments.length * 2,
   };
 }
@@ -198,7 +217,7 @@ export function measureVehicleRouting(
     }
   }
   return {
-    connectors: VEHICLE_CONNECTOR_SPECS.length,
+    connectors: VEHICLE_PERIMETER_CONNECTOR_SPECS.length,
     totalPins: fixture.totalPins,
     usedPins: fixture.usedPins,
     wires: fixture.requests.length,
