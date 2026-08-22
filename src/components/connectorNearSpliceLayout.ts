@@ -4,7 +4,7 @@ import type { CardinalSide, RoutePoint } from './routingGeometry';
 export const PIN_PITCH_PX = 28;
 export const CONNECTOR_WIDTH_PX = 180;
 export const CONNECTOR_TITLE_PX = 31;
-export const HORIZONTAL_PIN_WIDTH_PX = 32;
+export const HORIZONTAL_PIN_WIDTH_PX = PIN_PITCH_PX;
 export const HORIZONTAL_PIN_HEIGHT_PX = 92;
 export const SPLICE_SIZE_PX = 12;
 
