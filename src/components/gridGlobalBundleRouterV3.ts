@@ -166,7 +166,7 @@ function buildBlockedEdges(frame: Frame, obstacles: RouteObstacle[]): Set<string
       if (x > r.left + EPS && x < r.right - EPS) {
         for (let gy = gy0; gy < gy1; gy += 1) {
           const y = frame.originY + gy * GLOBAL_BUNDLE_GRID_SIZE;
-          if (y + GLOBAL_BUNDLE_GRID_SIZE > r.top + EPS && y < r.bottom - EPS) blocked.add(`v:${gx}:${gy}`);
+          if (y + GLOBAL_BUNDLE_GRID_SIZE > r.top + EPS && y < r.right - EPS) blocked.add(`v:${gx}:${gy}`);
         }
       }
     }
@@ -320,7 +320,7 @@ function searchSpine(
       const nextState: SearchState = {
         ...next,
         dir,
-        run: turning ? 1 : current.run + 1,
+        run: turning ? 1 : Math.min(bendRun, current.run + 1),
         turned: current.turned || turning,
         crossingStraight: step.crossingAtEnd,
       };
