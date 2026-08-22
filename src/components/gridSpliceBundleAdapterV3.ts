@@ -121,6 +121,30 @@ function shifted(point: RoutePoint, side: CardinalSide, transverseOffset: number
   return { x: point.x + transverseOffset, y: point.y };
 }
 
+function snapNearest(value: number, origin: number, grid: number): number {
+  return origin + Math.round((value - origin) / grid) * grid;
+}
+
+function snapOutward(value: number, origin: number, grid: number, side: CardinalSide): number {
+  const n = (value - origin) / grid;
+  const positive = side === 'right' || side === 'bottom';
+  return origin + (positive ? Math.ceil(n - 1e-9) : Math.floor(n + 1e-9)) * grid;
+}
+
+/** All virtual splice ports handed to the global router live on one lattice. */
+function snapVirtualPoint(raw: RoutePoint, side: CardinalSide, alignment: GridAlignmentV3): RoutePoint {
+  if (side === 'left' || side === 'right') {
+    return {
+      x: snapOutward(raw.x, alignment.originX, alignment.gridSize, side),
+      y: snapNearest(raw.y, alignment.originY, alignment.gridSize),
+    };
+  }
+  return {
+    x: snapNearest(raw.x, alignment.originX, alignment.gridSize),
+    y: snapOutward(raw.y, alignment.originY, alignment.gridSize, side),
+  };
+}
+
 function internalPath(physical: RouteTerminalOption, virtual: RouteTerminalOption, grid: number): RoutePoint[] {
   const first = outward(physical.point, physical.side, grid);
   const beforeVirtual = outward(virtual.point, opposite(virtual.side), grid);
@@ -214,7 +238,8 @@ function assignSidePorts(
     const ordered = orderGroupForOffsets(group, role, side);
     for (const branch of ordered) {
       const radial = outward(physical.point, side, 2 * alignment.gridSize);
-      const point = shifted(radial, side, offsets[slot] * alignment.gridSize);
+      const rawPoint = shifted(radial, side, offsets[slot] * alignment.gridSize);
+      const point = snapVirtualPoint(rawPoint, side, alignment);
       slot += 1;
       const option: RouteTerminalOption = {
         key: `${physical.key}|bundle-grid:${branch.requestId}`,
