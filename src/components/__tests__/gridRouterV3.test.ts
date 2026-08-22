@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planBundleGridRoutesV3 } from '../gridBundleRouterV3';
+import { planBundleGridRoutesV3, planBundleGridRoutesV3BeamExperiment } from '../gridBundleRouterV3';
 import { createVehicleStressRoutingFixture, measureVehicleRouting } from '../vehicleStressRoutingFixture';
 
 describe('grid bundle router V3 spike', () => {
@@ -22,6 +22,19 @@ describe('grid bundle router V3 spike', () => {
     // Development gate. Final acceptance is 180/180 in < 1000 ms.
     expect(elapsedMs).toBeLessThan(2000);
   }, 5000);
+
+  it('tests a bounded alternative-corridor beam against the greedy 118-wire baseline', () => {
+    const fixture = createVehicleStressRoutingFixture();
+    const started = Date.now();
+    const plan = planBundleGridRoutesV3BeamExperiment(fixture.requests, fixture.obstacles, fixture.displayIds);
+    const elapsedMs = Date.now() - started;
+    const metrics = measureVehicleRouting(fixture, plan.results, elapsedMs);
+    console.info(`[vehicle-routing-v3 beam] ${JSON.stringify({ ...metrics, corridorBundles: plan.corridorBundles, fallbackBundles: plan.fallbackBundles })}`);
+    expect(plan.results.size).toBe(180);
+    expect(metrics.routed).toBeGreaterThanOrEqual(118);
+    // Experiment budget only; the production path remains on the <2 s development gate above.
+    expect(elapsedMs).toBeLessThan(8000);
+  }, 10000);
 
   it('routes both first large endpoint groups instead of sacrificing the second bundle', () => {
     const fixture = createVehicleStressRoutingFixture();
