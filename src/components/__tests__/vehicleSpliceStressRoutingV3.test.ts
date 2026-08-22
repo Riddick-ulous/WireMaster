@@ -10,6 +10,9 @@ import {
   connectorNearReservedSlots,
   createVehicleSpliceStressRoutingFixture,
 } from '../vehicleSpliceStressRoutingFixture';
+import { createVehicleSpliceStressDemoProject } from '../vehicleSpliceStressDemo';
+import { buildViewerConnectorLayoutsV3 } from '../viewerConnectorLayoutV3';
+import { VEHICLE_PERIMETER_CONNECTOR_SPECS, packVehiclePerimeterSpecs } from '../vehiclePerimeterStressLayout';
 
 const GRID = 28;
 
@@ -40,6 +43,75 @@ function expectSideGap(fixture: ReturnType<typeof createVehicleSpliceStressRouti
 }
 
 describe('vehicle perimeter splice stress fixture', () => {
+  it('loads the perimeter demo as a real editable 30C / 40S electrical project with 180 global routes', () => {
+    const project = createVehicleSpliceStressDemoProject();
+    const harness = project.subHarnesses[0];
+    const activeWires = harness.wires.filter((wire) => wire.status === 'ACTIVE');
+    const activeSplices = harness.splices.filter((splice) => splice.status === 'ACTIVE');
+    const spliceById = new Map(activeSplices.map((splice) => [splice.id, splice]));
+    const anchorLeads = activeWires.filter((wire) => {
+      const spliceEnd = wire.endpointA.kind === 'splice' ? wire.endpointA : wire.endpointB.kind === 'splice' ? wire.endpointB : null;
+      const pinEnd = wire.endpointA.kind === 'pin' ? wire.endpointA : wire.endpointB.kind === 'pin' ? wire.endpointB : null;
+      const splice = spliceEnd ? spliceById.get(spliceEnd.spliceId) : undefined;
+      return Boolean(splice?.placement === 'CONNECTOR'
+        && pinEnd
+        && splice.ownerConnectorId === pinEnd.connectorId
+        && splice.anchorPinId === pinEnd.pinId);
+    });
+    const globalWires = activeWires.filter((wire) => !anchorLeads.includes(wire));
+    const fixture = createVehicleSpliceStressRoutingFixture();
+    const layouts = buildViewerConnectorLayoutsV3({
+      connectors: harness.connectors,
+      splices: harness.splices,
+      wires: harness.wires,
+      connectorPositions: harness.viewerLayout.connectorPositions,
+      connectorRotations: harness.viewerLayout.connectorRotations,
+      splicePositions: harness.viewerLayout.splicePositions,
+    });
+    const bundleKeys = new Set(globalWires.map((wire) => {
+      const a = wire.endpointA.kind === 'pin' ? wire.endpointA.connectorId : wire.endpointA.spliceId;
+      const b = wire.endpointB.kind === 'pin' ? wire.endpointB.connectorId : wire.endpointB.spliceId;
+      return [a, b].sort().join('|');
+    }));
+
+    expect(harness.connectors).toHaveLength(30);
+    expect(activeSplices).toHaveLength(40);
+    expect(activeSplices.filter((splice) => splice.placement === 'CONNECTOR')).toHaveLength(30);
+    expect(activeSplices.filter((splice) => splice.placement === 'FREE')).toHaveLength(10);
+    expect(anchorLeads).toHaveLength(30);
+    expect(activeWires).toHaveLength(210);
+    expect(globalWires).toHaveLength(180);
+    // Electrical normalization expands the fixture's repeated splice-to-splice
+    // pairs into one additional physical endpoint-pair group.
+    expect(bundleKeys).toHaveLength(74);
+    expect(harness.wires.every((wire) => wire.status === 'ACTIVE')).toBe(true);
+    expect(project.nets.every((net) => net.connectivityStatus === 'RESOLVED')).toBe(true);
+    const spans = Object.fromEntries(VEHICLE_PERIMETER_CONNECTOR_SPECS.map((spec) => {
+      const layout = layouts[`vehicle-${spec.displayId.toLowerCase()}`];
+      const horizontal = spec.rotation === 90 || spec.rotation === 270;
+      return [spec.displayId, {
+        width: Math.ceil((horizontal ? Math.max(180, layout.totalSlots * GRID) : 180) / GRID),
+        height: Math.ceil((horizontal ? 31 + 92 : 31 + layout.totalSlots * GRID) / GRID),
+      }];
+    }));
+    const packed = packVehiclePerimeterSpecs(VEHICLE_PERIMETER_CONNECTOR_SPECS, spans);
+    for (const spec of packed.specs) {
+      const connectorId = `vehicle-${spec.displayId.toLowerCase()}`;
+      expect(harness.viewerLayout.connectorPositions[connectorId], spec.displayId).toEqual({
+        x: spec.gridX * GRID,
+        y: spec.gridY * GRID,
+      });
+    }
+
+    for (const expected of fixture.splices) {
+      const actual = activeSplices.find((splice) => splice.id === expected.id)!;
+      const degree = activeWires.filter((wire) => [wire.endpointA, wire.endpointB]
+        .some((endpoint) => endpoint.kind === 'splice' && endpoint.spliceId === actual.id)).length;
+      expect(degree, expected.displayId).toBe(expected.wireCount);
+      if (expected.placement === 'FREE') expect(harness.viewerLayout.splicePositions[expected.id]).toBeDefined();
+    }
+  });
+
   it('keeps four routing grids between neighbours and double clearance in both axes at every corner', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     expectSideGap(fixture, 'top');

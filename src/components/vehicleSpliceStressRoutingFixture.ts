@@ -40,10 +40,10 @@ const LABEL_HEIGHT = 14;
 const LABEL_GAP = 8;
 const MIN_LABEL_EXIT = 112;
 
-interface TopologyPinEnd { kind: 'pin'; connectorId: string; pinIndex: number }
-interface TopologySpliceEnd { kind: 'splice'; spliceId: string }
-type TopologyEnd = TopologyPinEnd | TopologySpliceEnd;
-interface TopologyWire { id: string; a: TopologyEnd; b: TopologyEnd; original: VehicleWireAssignment }
+export interface TopologyPinEnd { kind: 'pin'; connectorId: string; pinIndex: number }
+export interface TopologySpliceEnd { kind: 'splice'; spliceId: string }
+export type TopologyEnd = TopologyPinEnd | TopologySpliceEnd;
+export interface TopologyWire { id: string; a: TopologyEnd; b: TopologyEnd; original: VehicleWireAssignment }
 interface IncidentEnd { key: string; assignment: VehicleWireAssignment; end: 'a' | 'b'; connectorId: string; pinIndex: number }
 
 // Frozen electrical-fixture order for selecting free-splice members. It is the
@@ -77,6 +77,7 @@ export interface VehicleSpliceStressRoutingFixture {
   connectorLayouts: Record<string, ConnectorVisualLayout>;
   connectorSpecs: VehicleConnectorSpec[];
   splices: VehicleSpliceStressSpec[];
+  topologyWires: TopologyWire[];
   totalPins: number;
   usedPins: number;
   perimeterGrid: VehiclePerimeterGrid;
@@ -415,6 +416,7 @@ export function createVehicleSpliceStressRoutingFixture(): VehicleSpliceStressRo
     connectorLayouts,
     connectorSpecs: packed.specs,
     splices: topology.splices,
+    topologyWires: topology.wires,
     totalPins: packed.specs.reduce((sum, spec) => sum + spec.pinCount, 0),
     usedPins: usedPinKeys.size,
     perimeterGrid: packed.grid,

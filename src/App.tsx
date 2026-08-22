@@ -24,8 +24,7 @@ import {
 import { deserializeProject, serializeProject } from './core/persistence';
 import { reconcileProject } from './core/resolver';
 import { createBlankProject, createDemoProject } from './core/sample';
-import { createVehicleStressDemoProject } from './core/vehicleStressDemo';
-import { createPackedVehicleStressLayout } from './components/vehicleStressRoutingFixture';
+import { createVehicleSpliceStressDemoProject } from './components/vehicleSpliceStressDemo';
 import { TransactionHistory, type HistoryState } from './core/transactions';
 import type { Project, UUID, ViewerRotation } from './core/model';
 
@@ -237,7 +236,7 @@ export default function App() {
         {lastSavedPath && <span className="save-status" title={lastSavedPath}>Saved ✓</span>}
         <button onClick={() => replaceProject(createBlankProject())}>New</button>
         <button onClick={() => replaceProject(createDemoProject())}>Demo</button>
-        <button title="Load the 30-connector / 180-wire routing stress project" onClick={() => replaceProject(createVehicleStressDemoProject(createPackedVehicleStressLayout().specs))}>Router Demo (30C)</button>
+        <button title="Load the editable 30-connector / 40-splice / 180-route stress project" onClick={() => replaceProject(createVehicleSpliceStressDemoProject())}>Router Demo (30C/40S)</button>
         <button onClick={openJson}>Open</button>
         <button onClick={() => void saveJson()}>Save…</button>
         <button disabled={!historyState.undoDepth} onClick={undo}>Undo {historyState.undoDepth || ''}</button>
