@@ -3,6 +3,8 @@ export interface ConnectorLayoutPin {
   wireId?: string;
   bundleKey?: string;
   remoteElementDisplayId?: string;
+  /** Viewer-axis position of the remote routing element. Used only for block ordering. */
+  remoteOrderHint?: number;
 }
 
 export interface ConnectorLayoutInput {
@@ -41,10 +43,11 @@ function numericCompare(left: string, right: string): number {
  * Derived viewer-only pin placement.
  *
  * Electrical cavity identity is never modified. Connected cavities are grouped
- * by physical endpoint-pair bundle, with larger groups first. Multi-wire groups
- * receive one blank visual slot between neighboring groups. One-wire groups are
- * packed together at the tail so sparse wiring does not make a connector huge.
- * Unused cavities follow in their physical cavity-number order.
+ * by physical endpoint-pair bundle. Multi-wire blocks may move as complete
+ * units to follow the spatial order of their remote elements. This reduces
+ * bundle crossovers without coupling electrical cavity numbering to viewer row
+ * position. One-wire groups remain packed together at the tail so sparse wiring
+ * does not make a connector huge. Unused cavities follow in physical order.
  */
 export function buildConnectorVisualLayout(input: ConnectorLayoutInput): ConnectorVisualLayout {
   const byBundle = new Map<string, ConnectorLayoutPin[]>();
@@ -68,9 +71,20 @@ export function buildConnectorVisualLayout(input: ConnectorLayoutInput): Connect
     .map(([bundleKey, pins]) => ({
       bundleKey,
       remoteElementDisplayId: pins[0].remoteElementDisplayId!,
+      remoteOrderHint: pins.find((pin) => pin.remoteOrderHint !== undefined)?.remoteOrderHint,
       pins: pins.slice().sort((left, right) => numericCompare(left.wireId!, right.wireId!) || left.cavityIndex - right.cavityIndex),
     }))
     .sort((left, right) => {
+      const leftMulti = left.pins.length > 1;
+      const rightMulti = right.pins.length > 1;
+      if (leftMulti !== rightMulti) return leftMulti ? -1 : 1;
+
+      if (left.remoteOrderHint !== undefined && right.remoteOrderHint !== undefined && left.remoteOrderHint !== right.remoteOrderHint) {
+        return left.remoteOrderHint - right.remoteOrderHint;
+      }
+      if (left.remoteOrderHint !== undefined && right.remoteOrderHint === undefined) return -1;
+      if (left.remoteOrderHint === undefined && right.remoteOrderHint !== undefined) return 1;
+
       if (left.pins.length !== right.pins.length) return right.pins.length - left.pins.length;
       const remote = numericCompare(left.remoteElementDisplayId, right.remoteElementDisplayId);
       if (remote) return remote;
