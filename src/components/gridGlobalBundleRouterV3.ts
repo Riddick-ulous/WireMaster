@@ -29,12 +29,7 @@ interface Reservation {
   edges: Map<string, { wireId: string; bundleKey: string; orientation: Orientation }>;
   nodes: Map<string, Usage>;
 }
-interface SearchState extends Node {
-  dir: Direction;
-  run: number;
-  turned: boolean;
-  crossingStraight: boolean;
-}
+interface SearchState extends Node { dir: Direction; run: number; turned: boolean; crossingStraight: boolean }
 interface QueueItem { key: string; state: SearchState; g: number; f: number }
 interface Passage { blocked: boolean; crossing: boolean }
 
@@ -113,16 +108,16 @@ function snap(value: number, origin: number, positive: boolean) {
 }
 function portal(frame: Frame, option: RouteTerminalOption, minStraight: number): Portal | null {
   const departed = outward(option.point, option.side, minStraight);
-  let p: RoutePoint;
-  if (option.side === 'right') p = { x: snap(departed.x, frame.originX, true), y: option.point.y };
-  else if (option.side === 'left') p = { x: snap(departed.x, frame.originX, false), y: option.point.y };
-  else if (option.side === 'bottom') p = { x: option.point.x, y: snap(departed.y, frame.originY, true) };
-  else p = { x: option.point.x, y: snap(departed.y, frame.originY, false) };
-  const n = node(frame, p);
-  const aligned = world(frame, n);
+  let point: RoutePoint;
+  if (option.side === 'right') point = { x: snap(departed.x, frame.originX, true), y: option.point.y };
+  else if (option.side === 'left') point = { x: snap(departed.x, frame.originX, false), y: option.point.y };
+  else if (option.side === 'bottom') point = { x: option.point.x, y: snap(departed.y, frame.originY, true) };
+  else point = { x: option.point.x, y: snap(departed.y, frame.originY, false) };
+  const gridNode = node(frame, point);
+  const aligned = world(frame, gridNode);
   if ((option.side === 'left' || option.side === 'right') && Math.abs(aligned.y - option.point.y) > EPS) return null;
   if ((option.side === 'top' || option.side === 'bottom') && Math.abs(aligned.x - option.point.x) > EPS) return null;
-  return { option, node: n, world: aligned };
+  return { option, node: gridNode, world: aligned };
 }
 
 function endpoint(request: RouteRequest, elementId: string) {
@@ -147,27 +142,25 @@ function onePortal(frame: Frame, request: RouteRequest, elementId: string): Port
 function buildBlockedEdges(frame: Frame, obstacles: RouteObstacle[]): Set<string> {
   const blocked = new Set<string>();
   for (const obstacle of obstacles) {
-    const r = rectForObstacle(obstacle);
-    const gx0 = Math.max(frame.minGX, Math.floor((r.left - frame.originX) / GLOBAL_BUNDLE_GRID_SIZE) - 1);
-    const gx1 = Math.min(frame.maxGX, Math.ceil((r.right - frame.originX) / GLOBAL_BUNDLE_GRID_SIZE) + 1);
-    const gy0 = Math.max(frame.minGY, Math.floor((r.top - frame.originY) / GLOBAL_BUNDLE_GRID_SIZE) - 1);
-    const gy1 = Math.min(frame.maxGY, Math.ceil((r.bottom - frame.originY) / GLOBAL_BUNDLE_GRID_SIZE) + 1);
+    const rect = rectForObstacle(obstacle);
+    const gx0 = Math.max(frame.minGX, Math.floor((rect.left - frame.originX) / GLOBAL_BUNDLE_GRID_SIZE) - 1);
+    const gx1 = Math.min(frame.maxGX, Math.ceil((rect.right - frame.originX) / GLOBAL_BUNDLE_GRID_SIZE) + 1);
+    const gy0 = Math.max(frame.minGY, Math.floor((rect.top - frame.originY) / GLOBAL_BUNDLE_GRID_SIZE) - 1);
+    const gy1 = Math.min(frame.maxGY, Math.ceil((rect.bottom - frame.originY) / GLOBAL_BUNDLE_GRID_SIZE) + 1);
     for (let gy = gy0; gy <= gy1; gy += 1) {
       const y = frame.originY + gy * GLOBAL_BUNDLE_GRID_SIZE;
-      if (y > r.top + EPS && y < r.bottom - EPS) {
-        for (let gx = gx0; gx < gx1; gx += 1) {
-          const x = frame.originX + gx * GLOBAL_BUNDLE_GRID_SIZE;
-          if (x + GLOBAL_BUNDLE_GRID_SIZE > r.left + EPS && x < r.right - EPS) blocked.add(`h:${gx}:${gy}`);
-        }
+      if (y <= rect.top + EPS || y >= rect.bottom - EPS) continue;
+      for (let gx = gx0; gx < gx1; gx += 1) {
+        const x = frame.originX + gx * GLOBAL_BUNDLE_GRID_SIZE;
+        if (x + GLOBAL_BUNDLE_GRID_SIZE > rect.left + EPS && x < rect.right - EPS) blocked.add(`h:${gx}:${gy}`);
       }
     }
     for (let gx = gx0; gx <= gx1; gx += 1) {
       const x = frame.originX + gx * GLOBAL_BUNDLE_GRID_SIZE;
-      if (x > r.left + EPS && x < r.right - EPS) {
-        for (let gy = gy0; gy < gy1; gy += 1) {
-          const y = frame.originY + gy * GLOBAL_BUNDLE_GRID_SIZE;
-          if (y + GLOBAL_BUNDLE_GRID_SIZE > r.top + EPS && y < r.right - EPS) blocked.add(`v:${gx}:${gy}`);
-        }
+      if (x <= rect.left + EPS || x >= rect.right - EPS) continue;
+      for (let gy = gy0; gy < gy1; gy += 1) {
+        const y = frame.originY + gy * GLOBAL_BUNDLE_GRID_SIZE;
+        if (y + GLOBAL_BUNDLE_GRID_SIZE > rect.top + EPS && y < rect.bottom - EPS) blocked.add(`v:${gx}:${gy}`);
       }
     }
   }
@@ -179,55 +172,55 @@ class Heap {
   get size() { return this.data.length; }
   push(item: QueueItem) {
     this.data.push(item);
-    let i = this.data.length - 1;
-    while (i > 0) {
-      const parent = Math.floor((i - 1) / 2);
+    let index = this.data.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
       if (this.data[parent].f <= item.f) break;
-      this.data[i] = this.data[parent];
-      i = parent;
+      this.data[index] = this.data[parent];
+      index = parent;
     }
-    this.data[i] = item;
+    this.data[index] = item;
   }
   pop(): QueueItem | undefined {
     if (!this.data.length) return undefined;
     const root = this.data[0];
     const last = this.data.pop()!;
     if (!this.data.length) return root;
-    let i = 0;
+    let index = 0;
     while (true) {
-      const left = i * 2 + 1;
+      const left = index * 2 + 1;
       const right = left + 1;
       if (left >= this.data.length) break;
       let child = left;
       if (right < this.data.length && this.data[right].f < this.data[left].f) child = right;
       if (this.data[child].f >= last.f) break;
-      this.data[i] = this.data[child];
-      i = child;
+      this.data[index] = this.data[child];
+      index = child;
     }
-    this.data[i] = last;
+    this.data[index] = last;
     return root;
   }
 }
 
-function localBounds(frame: Frame, p: Node, q: Node, width: number) {
+function localBounds(frame: Frame, start: Node, target: Node, width: number) {
   const margin = Math.max(18, width * 3 + 6);
   return {
-    minGX: Math.max(frame.minGX, Math.min(p.gx, q.gx) - margin),
-    maxGX: Math.min(frame.maxGX, Math.max(p.gx, q.gx) + margin),
-    minGY: Math.max(frame.minGY, Math.min(p.gy, q.gy) - margin),
-    maxGY: Math.min(frame.maxGY, Math.max(p.gy, q.gy) + margin),
+    minGX: Math.max(frame.minGX, Math.min(start.gx, target.gx) - margin),
+    maxGX: Math.min(frame.maxGX, Math.max(start.gx, target.gx) + margin),
+    minGY: Math.max(frame.minGY, Math.min(start.gy, target.gy) - margin),
+    maxGY: Math.min(frame.maxGY, Math.max(start.gy, target.gy) + margin),
   };
 }
-function inBounds(n: Node, b: ReturnType<typeof localBounds>) {
-  return n.gx >= b.minGX && n.gx <= b.maxGX && n.gy >= b.minGY && n.gy <= b.maxGY;
+function inBounds(n: Node, bounds: ReturnType<typeof localBounds>) {
+  return n.gx >= bounds.minGX && n.gx <= bounds.maxGX && n.gy >= bounds.minGY && n.gy <= bounds.maxGY;
 }
 function reconstruct(came: Map<string, string>, states: Map<string, SearchState>, key: string): Node[] {
   const out: Node[] = [];
   let current: string | undefined = key;
   while (current) {
-    const s = states.get(current);
-    if (!s) break;
-    out.push({ gx: s.gx, gy: s.gy });
+    const state = states.get(current);
+    if (!state) break;
+    out.push({ gx: state.gx, gy: state.gy });
     current = came.get(current);
   }
   return out.reverse();
@@ -247,8 +240,8 @@ function passageAtNode(usage: Usage | undefined, move: Orientation, isEnd: boole
 }
 
 function stepFootprint(
-  a: Node,
-  b: Node,
+  from: Node,
+  to: Node,
   dir: Direction,
   width: number,
   blocked: Set<string>,
@@ -260,23 +253,18 @@ function stepFootprint(
   let crossings = 0;
   let crossingAtEnd = false;
   for (let track = 0; track < width; track += 1) {
-    const ta = add(a, normal, track);
-    const tb = add(b, normal, track);
-    if (blocked.has(edgeKey(ta, tb)) || reservation.edges.has(edgeKey(ta, tb))) return { blocked: true, crossings: 0, crossingAtEnd: false };
-    const startUsage = passageAtNode(reservation.nodes.get(nodeKey(ta)), move, false);
-    const endUsage = passageAtNode(reservation.nodes.get(nodeKey(tb)), move, isTarget);
-    if (startUsage.blocked || endUsage.blocked) return { blocked: true, crossings: 0, crossingAtEnd: false };
-    if (endUsage.crossing) crossings += 1;
-    crossingAtEnd ||= endUsage.crossing;
+    const a = add(from, normal, track);
+    const b = add(to, normal, track);
+    if (blocked.has(edgeKey(a, b)) || reservation.edges.has(edgeKey(a, b))) return { blocked: true, crossings: 0, crossingAtEnd: false };
+    const startPassage = passageAtNode(reservation.nodes.get(nodeKey(a)), move, false);
+    const endPassage = passageAtNode(reservation.nodes.get(nodeKey(b)), move, isTarget);
+    if (startPassage.blocked || endPassage.blocked) return { blocked: true, crossings: 0, crossingAtEnd: false };
+    if (endPassage.crossing) crossings += 1;
+    crossingAtEnd ||= endPassage.crossing;
   }
   return { blocked: false, crossings, crossingAtEnd };
 }
 
-/**
- * Width-aware bundle search. A straight bundle may be arbitrarily short, but
- * once it turns, the straight run on both sides of every corner must be long
- * enough for the outer offset track to complete its Manhattan staircase.
- */
 function searchSpine(
   frame: Frame,
   start: Node,
@@ -306,7 +294,6 @@ function searchSpine(
     if (sameNode(current, target) && current.dir === targetDir && !current.crossingStraight && (!current.turned || current.run >= bendRun)) {
       return reconstruct(came, states, item.key);
     }
-
     for (const dir of ['left', 'right', 'up', 'down'] as Direction[]) {
       if (dir === opposite(current.dir)) continue;
       if (current.crossingStraight && dir !== current.dir) continue;
@@ -314,8 +301,7 @@ function searchSpine(
       if (turning && current.run < bendRun) continue;
       const next = add(current, vec(dir));
       if (!inBounds(next, bounds)) continue;
-      const isTarget = sameNode(next, target);
-      const step = stepFootprint(current, next, dir, width, blocked, reservation, isTarget);
+      const step = stepFootprint(current, next, dir, width, blocked, reservation, sameNode(next, target));
       if (step.blocked) continue;
       const nextState: SearchState = {
         ...next,
@@ -345,8 +331,8 @@ function direction(a: Node, b: Node): Direction {
 function bendNodes(path: Node[]): Node[] {
   if (path.length < 3) return path;
   const out = [path[0]];
-  for (let i = 1; i < path.length - 1; i += 1) {
-    if (direction(path[i - 1], path[i]) !== direction(path[i], path[i + 1])) out.push(path[i]);
+  for (let index = 1; index < path.length - 1; index += 1) {
+    if (direction(path[index - 1], path[index]) !== direction(path[index], path[index + 1])) out.push(path[index]);
   }
   out.push(path[path.length - 1]);
   return out;
@@ -356,10 +342,10 @@ function offsetTrack(spinePath: Node[], track: number): Node[] {
   if (spine.length < 2) return spine;
   const dirs = Array.from({ length: spine.length - 1 }, (_, index) => direction(spine[index], spine[index + 1]));
   const result: Node[] = [add(spine[0], rightNormal(dirs[0]), track)];
-  for (let i = 1; i < spine.length - 1; i += 1) {
-    const prev = add(spine[i], rightNormal(dirs[i - 1]), track);
-    const next = add(spine[i], rightNormal(dirs[i]), track);
-    result.push(orient(dirs[i - 1]) === 'h' ? { gx: next.gx, gy: prev.gy } : { gx: prev.gx, gy: next.gy });
+  for (let index = 1; index < spine.length - 1; index += 1) {
+    const prev = add(spine[index], rightNormal(dirs[index - 1]), track);
+    const next = add(spine[index], rightNormal(dirs[index]), track);
+    result.push(orient(dirs[index - 1]) === 'h' ? { gx: next.gx, gy: prev.gy } : { gx: prev.gx, gy: next.gy });
   }
   result.push(add(spine[spine.length - 1], rightNormal(dirs[dirs.length - 1]), track));
   return result.filter((point, index, all) => index === 0 || !sameNode(point, all[index - 1]));
@@ -426,11 +412,7 @@ function planBundle(
   reservation: Reservation,
 ): { results: Map<string, OrthogonalRouteResult>; orderMismatch: boolean } | null {
   const width = bundle.requests.length;
-  const raw = bundle.requests.map((request) => ({
-    request,
-    a: onePortal(frame, request, bundle.elementAId),
-    b: onePortal(frame, request, bundle.elementBId),
-  }));
+  const raw = bundle.requests.map((request) => ({ request, a: onePortal(frame, request, bundle.elementAId), b: onePortal(frame, request, bundle.elementBId) }));
   if (raw.some((item) => !item.a || !item.b)) return null;
   const items = raw as Array<{ request: RouteRequest; a: Portal; b: Portal }>;
   const startDir = sideDir(items[0].a.option.side);
@@ -445,10 +427,8 @@ function planBundle(
 
   let orderMismatch = false;
   for (let index = 0; index < width; index += 1) {
-    const expectedSource = add(sourceRef, sourceNormal, index);
-    const expectedTarget = add(targetRef, targetNormal, index);
-    if (!sameNode(items[index].a.node, expectedSource)) return null;
-    if (!sameNode(items[index].b.node, expectedTarget)) orderMismatch = true;
+    if (!sameNode(items[index].a.node, add(sourceRef, sourceNormal, index))) return null;
+    if (!sameNode(items[index].b.node, add(targetRef, targetNormal, index))) orderMismatch = true;
   }
   if (orderMismatch) return { results: new Map(), orderMismatch: true };
 
@@ -483,11 +463,6 @@ function planBundle(
   return { results, orderMismatch: false };
 }
 
-/**
- * Pure global bundle planner used by the connector-fanout experiment.
- * There is no raw-cavity portal protection and no individual-wire fallback.
- * Every 1W or NW endpoint pair is committed atomically as one routing object.
- */
 export function planGlobalBundleGridRoutesV3(
   requests: RouteRequest[],
   obstacles: RouteObstacle[] = [],
