@@ -41,7 +41,7 @@ export interface VehicleRoutingMetrics {
 const CONNECTOR_WIDTH = 180;
 const HEADER_HEIGHT = 31;
 const PIN_PITCH = VEHICLE_GRID_PX;
-const HORIZONTAL_PIN_WIDTH = 32;
+const HORIZONTAL_PIN_WIDTH = VEHICLE_GRID_PX;
 const HORIZONTAL_PIN_HEIGHT = 92;
 const LABEL_WIDTH = 96;
 const LABEL_HEIGHT = 14;
