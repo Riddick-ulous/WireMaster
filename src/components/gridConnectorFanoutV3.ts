@@ -10,6 +10,7 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
+import { buildRouteBundles, type ElementDisplayIds } from './routingBundles';
 import type { GridAlignmentV3 } from './gridSpliceAdapterV3';
 
 interface IncidentBranch {
@@ -19,6 +20,8 @@ interface IncidentBranch {
   other: RouteTerminal;
   minStraight: number;
 }
+
+type BundleRole = 'A' | 'B';
 
 interface ConnectorFanoutPortV3 {
   requestId: string;
@@ -40,6 +43,10 @@ export interface ConnectorFanoutExpansionV3 {
   geometries: Map<string, ConnectorFanoutGeometryV3>;
 }
 
+function numericCompare(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function sideIsHorizontal(side: CardinalSide): boolean {
   return side === 'left' || side === 'right';
 }
@@ -59,6 +66,14 @@ function transverse(point: RoutePoint, physicalSide: CardinalSide): number {
 function remoteTransverse(terminal: RouteTerminal, physicalSide: CardinalSide): number {
   if (!terminal.options.length) return 0;
   return terminal.options.reduce((sum, option) => sum + transverse(option.point, physicalSide), 0) / terminal.options.length;
+}
+
+/** Coordinate along the right-hand normal of an outward-facing terminal. */
+function outwardProjection(point: RoutePoint, side: CardinalSide): number {
+  if (side === 'right') return point.y;
+  if (side === 'left') return -point.y;
+  if (side === 'top') return point.x;
+  return -point.x;
 }
 
 function physicalOption(branch: IncidentBranch): RouteTerminalOption {
@@ -112,12 +127,12 @@ function groupBranches(branches: IncidentBranch[], physicalSide: CardinalSide): 
   return [...byRemote.values()]
     .map((group) => group.slice().sort((left, right) => {
       const delta = transverse(physicalOption(left).point, physicalSide) - transverse(physicalOption(right).point, physicalSide);
-      return delta || left.requestId.localeCompare(right.requestId, undefined, { numeric: true });
+      return delta || numericCompare(left.requestId, right.requestId);
     }))
     .sort((left, right) => {
       const l = left.reduce((sum, branch) => sum + transverse(physicalOption(branch).point, physicalSide), 0) / left.length;
       const r = right.reduce((sum, branch) => sum + transverse(physicalOption(branch).point, physicalSide), 0) / right.length;
-      return l - r || left[0].requestId.localeCompare(right[0].requestId, undefined, { numeric: true });
+      return l - r || numericCompare(left[0].requestId, right[0].requestId);
     });
 }
 
@@ -146,10 +161,49 @@ function chooseSplit(groups: IncidentBranch[][], physicalSide: CardinalSide): nu
   return best;
 }
 
+function bundleRoles(requests: RouteRequest[], displayIds: ElementDisplayIds): Map<string, Map<string, BundleRole>> {
+  const roles = new Map<string, Map<string, BundleRole>>();
+  const set = (local: string, remote: string, role: BundleRole) => {
+    const map = roles.get(local) ?? new Map<string, BundleRole>();
+    map.set(remote, role);
+    roles.set(local, map);
+  };
+  for (const bundle of buildRouteBundles(requests, displayIds)) {
+    set(bundle.elementAId, bundle.elementBId, 'A');
+    set(bundle.elementBId, bundle.elementAId, 'B');
+  }
+  return roles;
+}
+
+function laneProjectionDirection(physicalSide: CardinalSide, escapeSide: CardinalSide): number {
+  const base = { x: 0, y: 0 };
+  const lane0 = outward(base, physicalSide, 100);
+  const lane1 = outward(base, physicalSide, 101);
+  return Math.sign(outwardProjection(lane1, escapeSide) - outwardProjection(lane0, escapeSide)) || 1;
+}
+
+function orderGroupForLane(
+  group: IncidentBranch[],
+  role: BundleRole,
+  physicalSide: CardinalSide,
+  escapeSide: CardinalSide,
+): IncidentBranch[] {
+  const ascendingIds = group.slice().sort((left, right) => numericCompare(left.requestId, right.requestId));
+  // Global corridor ordering is measured along rightNormal(travelDirection).
+  // At A, travel direction is the local outward direction. At B, travel direction
+  // is inward, so the local outward projection is reversed.
+  const idsAscWithOutwardProjection = role === 'A';
+  const laneAscWithOutwardProjection = laneProjectionDirection(physicalSide, escapeSide) > 0;
+  return idsAscWithOutwardProjection === laneAscWithOutwardProjection
+    ? ascendingIds
+    : ascendingIds.reverse();
+}
+
 function buildGeometry(
   nodeId: string,
   branches: IncidentBranch[],
   alignment: GridAlignmentV3,
+  roleByRemote: ReadonlyMap<string, BundleRole>,
 ): ConnectorFanoutGeometryV3 {
   const options = branches.map(physicalOption);
   const physicalSide = options[0].side;
@@ -165,9 +219,6 @@ function buildGeometry(
     : chooseSplit(groups, physicalSide);
   const negativeGroups = groups.slice(0, split);
   const positiveGroups = groups.slice(split);
-  const negativeBranches = negativeGroups.flat();
-  const positiveBranches = positiveGroups.flat();
-  const all = [...negativeBranches, ...positiveBranches];
   const grid = alignment.gridSize;
   const baseLane = Math.max(1, ...branches.map((branch) => Math.ceil(branch.minStraight / grid)));
   const minT = Math.min(...options.map((option) => transverse(option.point, physicalSide)));
@@ -175,16 +226,30 @@ function buildGeometry(
   const negativeBoundary = minT - grid;
   const positiveBoundary = maxT + grid;
   const laneByRequest = new Map<string, number>();
+  const negativeIds = new Set<string>();
+  let nextLane = 0;
 
-  negativeBranches.forEach((branch, index) => laneByRequest.set(`${branch.requestId}:${branch.end}`, index));
-  positiveBranches.forEach((branch, index) => {
-    const reverseIndex = positiveBranches.length - 1 - index;
-    laneByRequest.set(`${branch.requestId}:${branch.end}`, negativeBranches.length + reverseIndex);
-  });
+  const assignGroups = (assignedGroups: IncidentBranch[][], escapeSide: CardinalSide, negative: boolean) => {
+    for (const group of assignedGroups) {
+      const role = roleByRemote.get(group[0].other.nodeId) ?? 'A';
+      const ordered = orderGroupForLane(group, role, physicalSide, escapeSide);
+      for (const branch of ordered) {
+        const key = `${branch.requestId}:${branch.end}`;
+        laneByRequest.set(key, nextLane);
+        if (negative) negativeIds.add(key);
+        nextLane += 1;
+      }
+    }
+  };
 
-  const negativeIds = new Set(negativeBranches.map((branch) => `${branch.requestId}:${branch.end}`));
+  // Keep group blocks contiguous. Positive-side blocks are allocated in reverse
+  // geometric order, matching the previous fanout topology while allowing a
+  // deterministic within-bundle permutation.
+  assignGroups(negativeGroups, negativeEscape(physicalSide), true);
+  assignGroups(positiveGroups.slice().reverse(), positiveEscape(physicalSide), false);
+
   const ports: ConnectorFanoutPortV3[] = [];
-  for (const branch of all) {
+  for (const branch of branches) {
     const key = `${branch.requestId}:${branch.end}`;
     const physical = physicalOption(branch);
     const lane = laneByRequest.get(key)!;
@@ -213,14 +278,16 @@ export function expandGridConnectorFanoutV3(
   obstacles: RouteObstacle[],
   alignment: GridAlignmentV3,
   connectorNodeIds: ReadonlySet<string>,
+  displayIds: ElementDisplayIds = {},
 ): ConnectorFanoutExpansionV3 {
   if (!connectorNodeIds.size) return { requests, obstacles, geometries: new Map() };
   const geometries = new Map<string, ConnectorFanoutGeometryV3>();
   const assigned = new Map<string, ConnectorFanoutPortV3>();
+  const roles = bundleRoles(requests, displayIds);
   for (const nodeId of connectorNodeIds) {
     const branches = incidentBranches(nodeId, requests);
     if (!branches.length) continue;
-    const geometry = buildGeometry(nodeId, branches, alignment);
+    const geometry = buildGeometry(nodeId, branches, alignment, roles.get(nodeId) ?? new Map());
     geometries.set(nodeId, geometry);
     for (const port of geometry.ports) assigned.set(`${port.requestId}:${port.end}`, port);
   }
