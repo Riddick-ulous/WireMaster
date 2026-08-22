@@ -265,6 +265,56 @@ function stepFootprint(
   return { blocked: false, crossings, crossingAtEnd };
 }
 
+function expandPath(points: Node[]): Node[] {
+  if (!points.length) return [];
+  const out = [points[0]];
+  for (let index = 1; index < points.length; index += 1) {
+    let current = out[out.length - 1];
+    const target = points[index];
+    if (current.gx !== target.gx && current.gy !== target.gy) return [];
+    while (!sameNode(current, target)) {
+      current = { gx: current.gx + Math.sign(target.gx - current.gx), gy: current.gy + Math.sign(target.gy - current.gy) };
+      out.push(current);
+    }
+  }
+  return out;
+}
+
+/**
+ * The spine changes normal at a 90-degree turn. Offset tracks therefore need
+ * an explicit local staircase between the old and new cross-sections. This is
+ * the actual NxN bundle-corner footprint that offsetTrack() will later emit.
+ * A bundle corner is never allowed to share/cross an already reserved node.
+ */
+function cornerFootprintClear(
+  center: Node,
+  fromDir: Direction,
+  toDir: Direction,
+  width: number,
+  blocked: Set<string>,
+  reservation: Reservation,
+): boolean {
+  if (fromDir === toDir) return true;
+  const fromNormal = rightNormal(fromDir);
+  const toNormal = rightNormal(toDir);
+  for (let track = 0; track < width; track += 1) {
+    const from = add(center, fromNormal, track);
+    const to = add(center, toNormal, track);
+    const corner = orient(fromDir) === 'h'
+      ? { gx: to.gx, gy: from.gy }
+      : { gx: from.gx, gy: to.gy };
+    const nodes = expandPath([from, corner, to]);
+    if (!nodes.length) return false;
+    for (let index = 1; index < nodes.length; index += 1) {
+      if (blocked.has(edgeKey(nodes[index - 1], nodes[index])) || reservation.edges.has(edgeKey(nodes[index - 1], nodes[index]))) return false;
+    }
+    for (const gridNode of nodes) {
+      if (reservation.nodes.has(nodeKey(gridNode))) return false;
+    }
+  }
+  return true;
+}
+
 function searchSpine(
   frame: Frame,
   start: Node,
@@ -299,6 +349,7 @@ function searchSpine(
       if (current.crossingStraight && dir !== current.dir) continue;
       const turning = dir !== current.dir;
       if (turning && current.run < bendRun) continue;
+      if (turning && !cornerFootprintClear(current, current.dir, dir, width, blocked, reservation)) continue;
       const next = add(current, vec(dir));
       if (!inBounds(next, bounds)) continue;
       const step = stepFootprint(current, next, dir, width, blocked, reservation, sameNode(next, target));
@@ -349,20 +400,6 @@ function offsetTrack(spinePath: Node[], track: number): Node[] {
   }
   result.push(add(spine[spine.length - 1], rightNormal(dirs[dirs.length - 1]), track));
   return result.filter((point, index, all) => index === 0 || !sameNode(point, all[index - 1]));
-}
-function expandPath(points: Node[]): Node[] {
-  if (!points.length) return [];
-  const out = [points[0]];
-  for (let index = 1; index < points.length; index += 1) {
-    let current = out[out.length - 1];
-    const target = points[index];
-    if (current.gx !== target.gx && current.gy !== target.gy) return [];
-    while (!sameNode(current, target)) {
-      current = { gx: current.gx + Math.sign(target.gx - current.gx), gy: current.gy + Math.sign(target.gy - current.gy) };
-      out.push(current);
-    }
-  }
-  return out;
 }
 
 function validateTrack(points: Node[], blocked: Set<string>, reservation: Reservation): { valid: boolean; crossings: number } {
