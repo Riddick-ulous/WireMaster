@@ -2,7 +2,14 @@ export type CardinalSide = 'left' | 'right' | 'top' | 'bottom';
 
 export interface RoutePoint { x: number; y: number }
 export interface RouteTerminalOption { key: string; side: CardinalSide; point: RoutePoint }
-export interface RouteTerminal { nodeId: string; options: RouteTerminalOption[] }
+export interface RouteTerminal {
+  nodeId: string;
+  options: RouteTerminalOption[];
+  /** Optional explicit junction metadata. Routers may ignore it when unsupported. */
+  junctionPlacement?: 'CONNECTOR' | 'FREE';
+  /** For connector-near junctions, the physical side that faces the owner connector. */
+  connectorFacingSide?: CardinalSide;
+}
 export interface RouteRequest {
   id: string;
   source: RouteTerminal;
@@ -282,24 +289,6 @@ export function compareCandidateMetric(left: CandidateMetric, right: CandidateMe
   if (left.crossings !== right.crossings) return left.crossings - right.crossings;
   if (left.churn !== right.churn) return left.churn - right.churn;
   if (left.bends !== right.bends) return left.bends - right.bends;
-  if (Math.abs(left.length - right.length) >= EPS) return left.length - right.length;
+  if (left.length !== right.length) return left.length - right.length;
   return left.natural - right.natural;
 }
-
-export function longitudinalOverlapLength(left: RoutePoint[], right: RoutePoint[]): number {
-  let total = 0;
-  for (const a of routeSegments(left)) for (const b of routeSegments(right)) total += collinearOverlap(a, b);
-  return total;
-}
-
-export function minimumParallelRouteSpacing(left: RoutePoint[], right: RoutePoint[]): number {
-  let minimum = Number.POSITIVE_INFINITY;
-  for (const a of routeSegments(left)) for (const b of routeSegments(right)) if (parallelProjectedOverlap(a, b) > EPS) minimum = Math.min(minimum, parallelDistance(a, b));
-  return minimum;
-}
-
-export function routeCrossesObstacle(points: RoutePoint[], obstacle: RouteObstacle): boolean {
-  return routeSegments(points).some((segment) => segmentCrossesObstacle(segment, obstacle));
-}
-
-export function routeHasUTurn(points: RoutePoint[]): boolean { const compact = simplifyRoute(points); return compact.length >= 3 && !routeHasValidTurns(compact) }
