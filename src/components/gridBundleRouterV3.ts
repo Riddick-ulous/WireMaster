@@ -20,8 +20,6 @@ const FRAME_MARGIN = 18;
 const TURN_COST = 5;
 const CROSSING_COST = 4;
 const CORRIDOR_MIN_RUN = 1;
-const RIPUP_BLOCKER_LIMIT = 12;
-const RIPUP_EVALUATION_LIMIT = 1;
 
 type Direction = 'left' | 'right' | 'up' | 'down';
 type Orientation = 'h' | 'v';
@@ -43,7 +41,6 @@ export interface BundleGridPlanV3 {
   bundleOrder: RouteBundle[];
   corridorBundles: number;
   fallbackBundles: number;
-  ripupRepairs: number;
 }
 
 function posMod(value: number, divisor: number) { const r = value % divisor; return r < 0 ? r + divisor : r; }
@@ -349,49 +346,6 @@ function reserve(points: Node[], reservation: Reservation, wireId: string, bundl
     reservation.nodes.set(nodeKey(nodes[i]), usage);
   }
 }
-function edgeNodes(key: string): [Node, Node] {
-  const [orientation, a, b] = key.split(':');
-  const first = Number(a); const second = Number(b);
-  return orientation === 'h'
-    ? [{ gx: first, gy: second }, { gx: first + 1, gy: second }]
-    : [{ gx: first, gy: second }, { gx: first, gy: second + 1 }];
-}
-function rebuildNodeUsage(edges: Reservation['edges']): Map<string, Usage> {
-  const perWire = new Map<string, Map<string, Orientation[]>>();
-  for (const [key, edge] of edges) {
-    const [a, b] = edgeNodes(key);
-    const wire = perWire.get(edge.wireId) ?? new Map<string, Orientation[]>();
-    for (const point of [a, b]) {
-      const nk = nodeKey(point);
-      const list = wire.get(nk) ?? [];
-      list.push(edge.orientation);
-      wire.set(nk, list);
-    }
-    perWire.set(edge.wireId, wire);
-  }
-  const nodes = new Map<string, Usage>();
-  for (const [wireId, wireNodes] of perWire) {
-    for (const [nk, orientations] of wireNodes) {
-      const usage = nodes.get(nk) ?? {};
-      const unique = new Set(orientations);
-      if (orientations.length === 1 || unique.size > 1) usage.bend = wireId;
-      else if (unique.has('h')) usage.h = wireId;
-      else usage.v = wireId;
-      nodes.set(nk, usage);
-    }
-  }
-  return nodes;
-}
-function withoutBundle(reservation: Reservation, bundleKey: string): Reservation {
-  const edges = new Map([...reservation.edges].filter(([, edge]) => edge.bundleKey !== bundleKey));
-  return { edges, nodes: rebuildNodeUsage(edges) };
-}
-function cloneReservation(reservation: Reservation): Reservation {
-  return {
-    edges: new Map(reservation.edges),
-    nodes: new Map([...reservation.nodes].map(([key, usage]) => [key, { ...usage }])),
-  };
-}
 function projection(p: Node, normal: Node) { return p.gx * normal.gx + p.gy * normal.gy; }
 
 function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation): Map<string, OrthogonalRouteResult> | null {
@@ -480,84 +434,31 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
   }
   return out;
 }
-function completeFallback(
-  baseReservation: Reservation,
-  baseResults: Map<string, OrthogonalRouteResult>,
-  bundles: RouteBundle[],
-  frame: Frame,
-  blocked: Set<string>,
-) {
-  const reservation = cloneReservation(baseReservation);
-  const results = new Map(baseResults);
-  for (const bundle of bundles) {
-    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
-  }
-  const routed = [...results.values()].filter((result) => result.status === 'ROUTED').length;
-  return { reservation, results, routed };
-}
 
 export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: RouteObstacle[] = [], displayIds: ElementDisplayIds = {}): BundleGridPlanV3 {
   const frame = inferFrame(requests, obstacles);
   const blocked = buildBlockedEdges(frame, obstacles);
   protectTerminalPortals(frame, requests, blocked);
-  const phase1Reservation: Reservation = { edges: new Map(), nodes: new Map() };
-  const phase1Results = new Map<string, OrthogonalRouteResult>();
+  const reservation: Reservation = { edges: new Map(), nodes: new Map() }; const results = new Map<string, OrthogonalRouteResult>();
   const bundleOrder = buildRouteBundles(requests, displayIds);
   const pending: RouteBundle[] = [];
-  const committed: RouteBundle[] = [];
   let corridorBundles = 0;
 
   // Phase 1: reserve only complete physical bundles. A bundle that cannot be
   // placed atomically is not allowed to fragment the grid with partial wires
   // before lower-priority bundles get their own corridor chance.
   for (const bundle of bundleOrder) {
-    const corridor = tryCorridor(bundle, frame, blocked, phase1Reservation);
+    const corridor = tryCorridor(bundle, frame, blocked, reservation);
     if (!corridor) { pending.push(bundle); continue; }
     corridorBundles += 1;
-    committed.push(bundle);
-    for (const [id, result] of corridor) phase1Results.set(id, result);
+    for (const [id, result] of corridor) results.set(id, result);
   }
 
-  // Baseline is always retained. Repair candidates are allowed to replace it
-  // only when the completed 180-wire solution routes strictly more wires.
-  let best = completeFallback(phase1Reservation, phase1Results, pending, frame, blocked);
-  let bestCorridorBundles = corridorBundles;
-  let bestFallbackBundles = pending.length;
-  let ripupRepairs = 0;
-  let evaluations = 0;
-
-  outer: for (const bundle of pending) {
-    if (bundle.requests.length < 2) continue;
-    const blockerCandidates = committed.slice().reverse().slice(0, RIPUP_BLOCKER_LIMIT);
-    for (const blocker of blockerCandidates) {
-      const trialReservation = withoutBundle(phase1Reservation, blocker.key);
-      const incoming = tryCorridor(bundle, frame, blocked, trialReservation);
-      if (!incoming) continue;
-      const reroutedBlocker = tryCorridor(blocker, frame, blocked, trialReservation);
-      if (!reroutedBlocker) continue;
-
-      const trialResults = new Map(phase1Results);
-      for (const [id, result] of incoming) trialResults.set(id, result);
-      for (const [id, result] of reroutedBlocker) trialResults.set(id, result);
-      const remaining = pending.filter((candidate) => candidate.key !== bundle.key);
-      const completed = completeFallback(trialReservation, trialResults, remaining, frame, blocked);
-      evaluations += 1;
-
-      if (completed.routed > best.routed) {
-        best = completed;
-        bestCorridorBundles = corridorBundles + 1;
-        bestFallbackBundles = remaining.length;
-        ripupRepairs = 1;
-      }
-      if (evaluations >= RIPUP_EVALUATION_LIMIT) break outer;
-    }
+  // Phase 2: only after corridor planning is complete do unresolved bundles
+  // fall back to per-wire routing through the remaining capacity/crossings.
+  for (const bundle of pending) {
+    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
   }
 
-  return {
-    results: best.results,
-    bundleOrder,
-    corridorBundles: bestCorridorBundles,
-    fallbackBundles: bestFallbackBundles,
-    ripupRepairs,
-  };
+  return { results, bundleOrder, corridorBundles, fallbackBundles: pending.length };
 }
