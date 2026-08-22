@@ -3,8 +3,8 @@ import { planBundleGridRoutesV3 } from '../gridBundleRouterV3';
 import { inferGridAlignmentV3 } from '../gridBundleRouterV3Splices';
 import { expandGridConnectorFanoutV3 } from '../gridConnectorFanoutV3';
 import { expandGridSplicesBundleV3 } from '../gridSpliceBundleAdapterV3';
-import { buildRouteBundles } from '../routingBundles';
-import type { CardinalSide, RouteRequest, RouteTerminal } from '../routingGeometry';
+import { buildRouteBundles, type RouteBundle } from '../routingBundles';
+import type { CardinalSide, RouteObstacle, RouteRequest, RouteTerminal } from '../routingGeometry';
 import { createVehicleSpliceStressRoutingFixture } from '../vehicleSpliceStressRoutingFixture';
 
 const GRID = 28;
@@ -32,8 +32,13 @@ function sideCompatible(terminals: RouteTerminal[]): { ok: boolean; side?: Cardi
   return { ok: true, side };
 }
 
+function routeBundle(bundle: RouteBundle, obstacles: RouteObstacle[], displayIds: Record<string, string>) {
+  const plan = planBundleGridRoutesV3(bundle.requests, obstacles, displayIds);
+  return bundle.requests.filter((request) => plan.results.get(request.id)?.status === 'ROUTED').length;
+}
+
 describe('bundle egress compatibility after connector fanout', () => {
-  it('keeps bundle-aware connector and splice egresses representable and independently routable by the global N-track router', () => {
+  it('keeps bundle-aware connector and splice egresses representable and classifies static blockers', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     const alignment = inferGridAlignmentV3(fixture.requests);
     const spliceExpansion = expandGridSplicesBundleV3(fixture.requests, fixture.obstacles, alignment);
@@ -52,19 +57,22 @@ describe('bundle egress compatibility after connector fanout', () => {
     console.info(`[vehicle-routing-v3 egress-compat-bundle-splice] multiwire=${bundles.length} compatible=${bundles.length - failures.length} incompatible=${failures.length}`);
     console.info(`[vehicle-routing-v3 egress-compat-bundle-splice failures] ${JSON.stringify(failures)}`);
 
-    const isolated = bundles.map((bundle) => {
-      const plan = planBundleGridRoutesV3(bundle.requests, fanout.obstacles, fixture.displayIds);
-      const routed = bundle.requests.filter((request) => plan.results.get(request.id)?.status === 'ROUTED').length;
-      return {
-        pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
-        size: bundle.requests.length,
-        routed,
-        corridorBundles: plan.corridorBundles,
-      };
-    });
-    const isolatedFailures = isolated.filter((item) => item.routed !== item.size);
+    const allObstacles = fanout.obstacles;
+    const noLabels = allObstacles.filter((obstacle) => obstacle.kind !== 'label');
+    const noFanIn = allObstacles.filter((obstacle) => !obstacle.id.startsWith('grid-bundle-fanin-'));
+    const bodiesOnly = allObstacles.filter((obstacle) => obstacle.kind === 'node' && !obstacle.id.startsWith('grid-bundle-fanin-'));
+
+    const isolated = bundles.map((bundle) => ({
+      pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
+      size: bundle.requests.length,
+      all: routeBundle(bundle, allObstacles, fixture.displayIds),
+      noLabels: routeBundle(bundle, noLabels, fixture.displayIds),
+      noFanIn: routeBundle(bundle, noFanIn, fixture.displayIds),
+      bodiesOnly: routeBundle(bundle, bodiesOnly, fixture.displayIds),
+    }));
+    const isolatedFailures = isolated.filter((item) => item.all !== item.size);
     console.info(`[vehicle-routing-v3 egress-isolated] complete=${isolated.length - isolatedFailures.length}/${isolated.length}`);
-    console.info(`[vehicle-routing-v3 egress-isolated failures] ${JSON.stringify(isolatedFailures)}`);
+    console.info(`[vehicle-routing-v3 egress-isolated blockers] ${JSON.stringify(isolatedFailures)}`);
 
     expect(bundles.length).toBeGreaterThan(0);
     expect(failures).toEqual([]);
