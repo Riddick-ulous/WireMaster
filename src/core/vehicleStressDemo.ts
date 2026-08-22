@@ -63,6 +63,7 @@ export const VEHICLE_CONNECTOR_SPECS: VehicleConnectorSpec[] = [
 ].map((spec): VehicleConnectorSpec => ({
   ...spec,
   gridX: spec.displayId === 'C30' ? 76 : spec.gridX * 2,
+  gridY: spec.displayId === 'C30' ? 8 : spec.gridY,
   rotation: spec.rotation as ViewerRotation,
 }));
 
