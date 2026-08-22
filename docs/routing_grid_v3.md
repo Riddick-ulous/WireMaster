@@ -94,27 +94,67 @@ Large bundles therefore reserve useful corridors before sparse one- or two-wire 
 A bundle of `N` wires is planned as a corridor with `N` adjacent unit-capacity tracks where geometry permits.
 
 The planner conceptually performs:
-1. bundle corridor search,
-2. reservation of the required track strip,
-3. assignment of individual wires to tracks inside that strip.
+1. connector / splice endpoint layout,
+2. bundle corridor search,
+3. reservation of the required track strip,
+4. assignment of individual wires to tracks inside that strip.
 
 Individual wires are not expected to discover parallel placement independently.
 
-## 5. Cavity / track permutation
+## 5. Connector cavity viewer layout and bundle breakout
 
-The physical wire endpoint remains its actual cavity/pin. V3 may however choose a different **visual track ordering inside a bundle** to minimize crossings and produce clean parallel routing.
+Physical cavity identity and viewer row position are separate concepts in V3.
 
-Example: cavities `1,2,3,4` at one connector may enter the shared corridor in visual order `2,1,4,3` if that reduces the required crossovers toward the opposite connector.
+A pin always keeps its real electrical identity, for example `C1 cavity 4`, but the viewer may place that cavity on a different visual row to group related wires into clean physical bundles. Moving a cavity row in the viewer never changes the pin ID, cavity number, net, wire endpoint or editor data.
 
-This is layout only:
+Example electrical cavities may be displayed as:
+
+```text
+2
+6   bundle C1<->C2
+7
+4
+
+    one empty visual slot
+
+1
+5   bundle C1<->C3
+3
+8
+
+    one empty visual slot
+
+9
+10  one-wire groups packed together
+11
+```
+
+The rules are:
+1. connected cavities are grouped by their physical endpoint-pair bundle,
+2. larger groups are placed first,
+3. equal-size groups are ordered by the remote element display ID using numeric comparison,
+4. cavities inside one bundle occupy contiguous visual slots,
+5. the wire order inside a group is deterministic and may be permuted as layout state to reduce breakout crossings,
+6. multi-wire groups are separated from neighboring groups by `1G = 28 px` blank visual space by default,
+7. one-wire groups are packed together without one blank row per wire,
+8. unused cavities remain visible and retain their cavity IDs; they are placed as a compact trailing block unless later user layout rules override this.
+
+This connector-level rearrangement replaces the earlier experimental approach of borrowing another wire's terminal coordinate. A wire always starts at the viewer location of **its own physical cavity**.
+
+The connector body expands as required for inserted visual gap slots. Therefore connector body keepouts and terminal coordinates are derived from the same visual-slot layout before routing begins.
+
+### 5.1 Bundle track order
+
+After connector-level grouping, the bundle may still choose the ordering of its tracks inside the bounded breakout region.
+
+The preferred case is that both connector ends expose the same wire order, allowing a parallel `N`-track corridor with zero internal crossings. If a permutation is still required, it must happen in a bounded breakout / permutation region near the endpoint, not as repeated crossings throughout the main corridor.
+
+This remains layout only:
 - cavity numbers never change,
 - wire endpoints never change,
 - wire IDs never change,
-- editor ordering never changes merely because the viewer chooses another track order.
-
-Track ordering is selected jointly for the whole bundle. The objective is to minimize required local permutations / crossings while preserving a compact corridor.
-
-Any required permutation should happen in a bounded breakout / permutation region near the bundle endpoint, not as repeated crossings throughout the main bundle corridor.
+- electrical topology never changes,
+- editor ordering never changes merely because the viewer chooses another cavity row or track order.
 
 ## 6. Splices
 
@@ -132,7 +172,13 @@ The base search state is `(gridX, gridY, direction)` so continuing straight, ben
 
 A* (or an equivalent deterministic shortest-path search) may be used for one bundle corridor.
 
-Routing a bundle reserves its edge strip. If a later bundle is `UNROUTED`, bounded rip-up / reroute may remove a small number of lower-priority bundles and retry. A lower-priority bundle must never permanently displace a higher-priority larger bundle unless the alternative improves the global number of routed wires without violating hard rules.
+Routing is two-phase during the initial pass:
+1. every bundle receives an atomic corridor attempt in bundle-priority order; a failed bundle may not reserve only some of its wires,
+2. unresolved bundles are handled only after complete corridor reservations have been attempted.
+
+If a later bundle is `UNROUTED`, bounded rip-up / reroute may remove a small number of lower-priority bundles and retry. A lower-priority bundle must never permanently displace a higher-priority larger bundle unless the alternative improves the global number of routed wires without violating hard rules.
+
+Terminal portal access is protected globally so an earlier bundle cannot consume the mandatory exit geometry of a later connector cavity.
 
 ## 8. Objective order
 
@@ -172,7 +218,7 @@ Target fixture:
 - vehicle-like spatial layout rather than isolated test pairs,
 - connection bundles spanning 1 wire through large multi-wire groups,
 - both nearby and long vehicle-spanning bundles,
-- enough crossing pressure to exercise cavity/track permutation,
+- enough crossing pressure to exercise connector cavity grouping and track permutation,
 - splice-capable geometry retained for later splice-heavy variants.
 
 Metrics reported at minimum:
