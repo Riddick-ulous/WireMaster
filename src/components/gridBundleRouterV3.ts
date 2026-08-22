@@ -125,6 +125,28 @@ function onePortal(frame: Frame, request: RouteRequest, elementId: string): Port
   return portal(frame, end.terminal.options[0], end.minStraight);
 }
 
+function protectTerminalPortals(frame: Frame, requests: RouteRequest[], blocked: Set<string>) {
+  for (const request of requests) {
+    const ends = [
+      { terminal: request.source, minStraight: request.sourceMinStraight ?? BUNDLE_GRID_SIZE },
+      { terminal: request.target, minStraight: request.targetMinStraight ?? BUNDLE_GRID_SIZE },
+    ];
+    for (const end of ends) {
+      for (const option of end.terminal.options) {
+        const p = portal(frame, option, end.minStraight);
+        if (!p) continue;
+        const allowed = sideDir(option.side);
+        for (const dir of ['left', 'right', 'up', 'down'] as Direction[]) {
+          if (dir === allowed) continue;
+          const adjacent = add(p.node, vec(dir));
+          if (adjacent.gx < frame.minGX || adjacent.gx > frame.maxGX || adjacent.gy < frame.minGY || adjacent.gy > frame.maxGY) continue;
+          blocked.add(edgeKey(p.node, adjacent));
+        }
+      }
+    }
+  }
+}
+
 function buildBlockedEdges(frame: Frame, obstacles: RouteObstacle[]): Set<string> {
   const blocked = new Set<string>();
   for (const obstacle of obstacles) {
@@ -414,7 +436,9 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
 }
 
 export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: RouteObstacle[] = [], displayIds: ElementDisplayIds = {}): BundleGridPlanV3 {
-  const frame = inferFrame(requests, obstacles); const blocked = buildBlockedEdges(frame, obstacles);
+  const frame = inferFrame(requests, obstacles);
+  const blocked = buildBlockedEdges(frame, obstacles);
+  protectTerminalPortals(frame, requests, blocked);
   const reservation: Reservation = { edges: new Map(), nodes: new Map() }; const results = new Map<string, OrthogonalRouteResult>();
   const bundleOrder = buildRouteBundles(requests, displayIds);
   const pending: RouteBundle[] = [];
