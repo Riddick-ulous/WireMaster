@@ -2,9 +2,18 @@ export type CardinalSide = 'left' | 'right' | 'top' | 'bottom';
 
 export interface RoutePoint { x: number; y: number }
 export interface RouteTerminalOption { key: string; side: CardinalSide; point: RoutePoint }
-export interface RouteTerminal { nodeId: string; options: RouteTerminalOption[] }
+export interface RouteTerminal {
+  nodeId: string;
+  options: RouteTerminalOption[];
+  /** Optional explicit junction metadata. Routers that do not use it remain unchanged. */
+  junctionPlacement?: 'CONNECTOR' | 'FREE';
+  /** Physical side of a connector-near junction that faces its owner connector. */
+  connectorFacingSide?: CardinalSide;
+}
 export interface RouteRequest {
   id: string;
+  /** Stable human-facing wire order used only as a deterministic tie-breaker. */
+  displayId?: string;
   source: RouteTerminal;
   target: RouteTerminal;
   sourceMinStraight?: number;

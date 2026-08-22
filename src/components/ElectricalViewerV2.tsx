@@ -15,13 +15,15 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import type { ConnectorInstance, Project, SpliceInstance, UUID, ViewerRotation, WireEndpoint, WireInstance } from '../core/model';
+import type { ConnectorVisualLayout } from './connectorBundleLayout';
 import type { SplicePreview } from './SpliceDialog';
 import { connectorNearSplicePosition } from './connectorNearSpliceLayout';
-import { planOrthogonalRoutesV2 } from './orthogonalRouterV2';
+import { planBundleGridRoutesV3WithSplices } from './gridBundleRouterV3Splices';
 import { spliceLabelObstacle, wireLabelGeometry, type RoutingLabelGeometry } from './routingLabels';
 import { MIN_BEND_SPACING, type CardinalSide, type OrthogonalRouteResult, type RouteObstacle, type RoutePoint, type RouteRequest, type RouteTerminal, type RouteTerminalOption } from './routingGeometry';
+import { buildViewerConnectorLayoutsV3 } from './viewerConnectorLayoutV3';
 
-interface ConnectorNodeData extends Record<string, unknown> { connector: ConnectorInstance; rotation: ViewerRotation; onRotate: (connectorId: UUID) => void }
+interface ConnectorNodeData extends Record<string, unknown> { connector: ConnectorInstance; visualLayout: ConnectorVisualLayout; rotation: ViewerRotation; onRotate: (connectorId: UUID) => void }
 interface SpliceNodeData extends Record<string, unknown> { splice: SpliceInstance; netName: string; labelSide: CardinalSide; wireCount: number; summary: string; preview?: boolean }
 type ConnectorNode = Node<ConnectorNodeData, 'connector'>;
 type SpliceNode = Node<SpliceNodeData, 'splice'>;
@@ -32,7 +34,7 @@ export type WireRenderStyle = 'smooth' | 'orthogonal';
 const PIN_PITCH_PX = 28;
 const CONNECTOR_WIDTH_PX = 180;
 const CONNECTOR_TITLE_PX = 31;
-const HORIZONTAL_PIN_WIDTH_PX = 32;
+const HORIZONTAL_PIN_WIDTH_PX = 28;
 const HORIZONTAL_PIN_HEIGHT_PX = 92;
 const SPLICE_SIZE_PX = 12;
 const PREVIEW_SPLICE_ID = '__wiremaster_splice_preview__';
@@ -63,6 +65,8 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
   const handlePosition = handlePositionForRotation(data.rotation);
   const horizontal = data.rotation === 90 || data.rotation === 270;
   const titleAtBottom = data.rotation === 270;
+  const cavityBySlot = new Map<number, number>();
+  for (const [cavityIndex, slot] of data.visualLayout.slotByCavityIndex) cavityBySlot.set(slot, cavityIndex);
   useEffect(() => {
     const frame = requestAnimationFrame(() => updateNodeInternals(id));
     return () => cancelAnimationFrame(frame);
@@ -77,12 +81,17 @@ function ConnectorNodeView({ id, data }: NodeProps<ConnectorNode>) {
     <div className={`viewer-connector rotation-${data.rotation} ${horizontal ? 'horizontal' : 'vertical'}`}>
       {!titleAtBottom && title}
       <div className="viewer-pins">
-        {data.connector.pins.map((pin) => (
-          <div className="viewer-pin" key={pin.id}>
-            <Handle id={`p-${pin.id}`} type="source" position={handlePosition} className="pin-handle" />
-            <span className="cavity">{pin.cavity}</span><span className="pin-name">{pin.pinName || '—'}</span>
-          </div>
-        ))}
+        {Array.from({ length: data.visualLayout.totalSlots }, (_, slot) => {
+          const cavityIndex = cavityBySlot.get(slot);
+          if (cavityIndex === undefined) return <div className="viewer-pin viewer-pin-gap" key={`gap-${slot}`} aria-hidden="true" />;
+          const pin = data.connector.pins[cavityIndex];
+          return (
+            <div className="viewer-pin" key={pin.id}>
+              <Handle id={`p-${pin.id}`} type="source" position={handlePosition} className="pin-handle" />
+              <span className="cavity">{pin.cavity}</span><span className="pin-name">{pin.pinName || '—'}</span>
+            </div>
+          );
+        })}
       </div>
       {titleAtBottom && title}
     </div>
@@ -197,7 +206,7 @@ function endpointDescription(endpoint: WireEndpoint, connectors: ConnectorInstan
 function measuredSize(node: FlowNode): { width: number; height: number } {
   if (node.type === 'splice') return { width: node.measured?.width ?? SPLICE_SIZE_PX, height: node.measured?.height ?? SPLICE_SIZE_PX };
   const horizontal = node.data.rotation === 90 || node.data.rotation === 270;
-  return { width: node.measured?.width ?? (horizontal ? Math.max(CONNECTOR_WIDTH_PX, node.data.connector.pins.length * HORIZONTAL_PIN_WIDTH_PX) : CONNECTOR_WIDTH_PX), height: node.measured?.height ?? (horizontal ? CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX : CONNECTOR_TITLE_PX + node.data.connector.pins.length * PIN_PITCH_PX) };
+  return { width: node.measured?.width ?? (horizontal ? Math.max(CONNECTOR_WIDTH_PX, node.data.visualLayout.totalSlots * HORIZONTAL_PIN_WIDTH_PX) : CONNECTOR_WIDTH_PX), height: node.measured?.height ?? (horizontal ? CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX : CONNECTOR_TITLE_PX + node.data.visualLayout.totalSlots * PIN_PITCH_PX) };
 }
 
 function terminalForEndpoint(endpoint: WireEndpoint, nodes: FlowNode[]): RouteTerminal | null {
@@ -206,15 +215,16 @@ function terminalForEndpoint(endpoint: WireEndpoint, nodes: FlowNode[]): RouteTe
   const size = measuredSize(node);
   if (endpoint.kind === 'pin') {
     if (node.type !== 'connector') return null;
-    const pinIndex = node.data.connector.pins.findIndex((pin) => pin.id === endpoint.pinId);
-    if (pinIndex < 0) return null;
+    const cavityIndex = node.data.connector.pins.findIndex((pin) => pin.id === endpoint.pinId);
+    const visualSlot = node.data.visualLayout.slotByCavityIndex.get(cavityIndex);
+    if (cavityIndex < 0 || visualSlot === undefined) return null;
     const rotation = node.data.rotation;
     let side: CardinalSide;
     let point: RoutePoint;
-    if (rotation === 180) { side = 'left'; point = { x: node.position.x, y: node.position.y + CONNECTOR_TITLE_PX + pinIndex * PIN_PITCH_PX + PIN_PITCH_PX / 2 }; }
-    else if (rotation === 90) { side = 'bottom'; point = { x: node.position.x + pinIndex * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2, y: node.position.y + size.height }; }
-    else if (rotation === 270) { side = 'top'; point = { x: node.position.x + pinIndex * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2, y: node.position.y }; }
-    else { side = 'right'; point = { x: node.position.x + size.width, y: node.position.y + CONNECTOR_TITLE_PX + pinIndex * PIN_PITCH_PX + PIN_PITCH_PX / 2 }; }
+    if (rotation === 180) { side = 'left'; point = { x: node.position.x, y: node.position.y + CONNECTOR_TITLE_PX + visualSlot * PIN_PITCH_PX + PIN_PITCH_PX / 2 }; }
+    else if (rotation === 90) { side = 'bottom'; point = { x: node.position.x + visualSlot * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2, y: node.position.y + size.height }; }
+    else if (rotation === 270) { side = 'top'; point = { x: node.position.x + visualSlot * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2, y: node.position.y }; }
+    else { side = 'right'; point = { x: node.position.x + size.width, y: node.position.y + CONNECTOR_TITLE_PX + visualSlot * PIN_PITCH_PX + PIN_PITCH_PX / 2 }; }
     return { nodeId: node.id, options: [{ key: `p-${endpoint.pinId}`, side, point }] };
   }
   if (node.type !== 'splice') return null;
@@ -226,7 +236,12 @@ function terminalForEndpoint(endpoint: WireEndpoint, nodes: FlowNode[]): RouteTe
     { key: `s-${endpoint.spliceId}-top`, side: 'top', point: { x: node.position.x + halfW, y: node.position.y } },
     { key: `s-${endpoint.spliceId}-bottom`, side: 'bottom', point: { x: node.position.x + halfW, y: node.position.y + size.height } },
   ];
-  return { nodeId: node.id, options };
+  return {
+    nodeId: node.id,
+    options,
+    junctionPlacement: node.data.splice.placement,
+    connectorFacingSide: node.data.splice.placement === 'CONNECTOR' ? node.data.labelSide : undefined,
+  };
 }
 
 function nodeObstacle(node: FlowNode): RouteObstacle | null {
@@ -272,9 +287,17 @@ interface Props {
 export function ElectricalViewer({ project, harnessId, selectedConnectorId, highlightedNetId, wireRenderStyle, splicePreview, onSelectConnector, onHighlightNet, onEditSplice, onRotateConnector, onLayoutChange, onSpliceLayoutChange }: Props) {
   const harness = project.subHarnesses.find((item) => item.id === harnessId)!;
   const wireClasses = project.wireClasses;
+  const connectorLayouts = useMemo(() => buildViewerConnectorLayoutsV3({
+    connectors: harness.connectors,
+    splices: harness.splices,
+    wires: harness.wires,
+    connectorPositions: harness.viewerLayout.connectorPositions,
+    connectorRotations: harness.viewerLayout.connectorRotations,
+    splicePositions: harness.viewerLayout.splicePositions,
+  }), [harness.connectors, harness.splices, harness.viewerLayout.connectorPositions, harness.viewerLayout.connectorRotations, harness.viewerLayout.splicePositions, harness.wires]);
 
   const desiredNodes = useMemo<FlowNode[]>(() => {
-    const connectors: ConnectorNode[] = harness.connectors.map((connector, index) => ({ id: connector.id, type: 'connector', position: harness.viewerLayout.connectorPositions[connector.id] ?? { x: 80 + index * 380, y: 120 }, data: { connector, rotation: harness.viewerLayout.connectorRotations[connector.id] ?? 0, onRotate: onRotateConnector }, selected: connector.id === selectedConnectorId }));
+    const connectors: ConnectorNode[] = harness.connectors.map((connector, index) => ({ id: connector.id, type: 'connector', position: harness.viewerLayout.connectorPositions[connector.id] ?? { x: 80 + index * 380, y: 120 }, data: { connector, visualLayout: connectorLayouts[connector.id], rotation: harness.viewerLayout.connectorRotations[connector.id] ?? 0, onRotate: onRotateConnector }, selected: connector.id === selectedConnectorId }));
     const connectorById = new Map(harness.connectors.map((connector) => [connector.id, connector]));
     const connectorPositionById = new Map(connectors.map((node) => [node.id, node.position]));
     const resolvedConnectorPositions = Object.fromEntries(connectors.map((node) => [node.id, node.position])) as Record<UUID, RoutePoint>;
@@ -282,7 +305,11 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       let position = harness.viewerLayout.splicePositions[splice.id] ?? defaultFreeSplicePosition(splice, harness.connectors, resolvedConnectorPositions, index);
       let labelSide: CardinalSide = 'right';
       if (splice.placement === 'CONNECTOR' && splice.ownerConnectorId) {
-        const placement = connectorNearSplicePosition(splice, connectorById.get(splice.ownerConnectorId), connectorPositionById.get(splice.ownerConnectorId) ?? { x: 80, y: 120 }, harness.viewerLayout.connectorRotations[splice.ownerConnectorId] ?? 0);
+        const connectorNode = connectors.find((node) => node.id === splice.ownerConnectorId);
+        const connector = connectorById.get(splice.ownerConnectorId);
+        const cavityIndex = connector?.pins.findIndex((pin) => pin.id === splice.anchorPinId) ?? -1;
+        const visualSlot = connectorLayouts[splice.ownerConnectorId]?.slotByCavityIndex.get(cavityIndex);
+        const placement = connectorNearSplicePosition(splice, connector, connectorPositionById.get(splice.ownerConnectorId) ?? { x: 80, y: 120 }, harness.viewerLayout.connectorRotations[splice.ownerConnectorId] ?? 0, visualSlot, connectorNode ? measuredSize(connectorNode) : undefined);
         position = placement.position; labelSide = placement.labelSide;
       }
       const connected = harness.wires.filter((wire) => wire.status !== 'ORPHANED' && ((wire.endpointA.kind === 'splice' && wire.endpointA.spliceId === splice.id) || (wire.endpointB.kind === 'splice' && wire.endpointB.spliceId === splice.id)));
@@ -298,7 +325,10 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       const anchorConnector = harness.connectors.find((connector) => connector.pins.some((pin) => pin.id === splicePreview.anchorPinId));
       if (anchorConnector) {
         fake.ownerConnectorId = anchorConnector.id;
-        const placement = connectorNearSplicePosition(fake, anchorConnector, connectorPositionById.get(anchorConnector.id) ?? { x: 80, y: 120 }, harness.viewerLayout.connectorRotations[anchorConnector.id] ?? 0);
+        const anchorNode = connectors.find((node) => node.id === anchorConnector.id);
+        const cavityIndex = anchorConnector.pins.findIndex((pin) => pin.id === splicePreview.anchorPinId);
+        const visualSlot = connectorLayouts[anchorConnector.id]?.slotByCavityIndex.get(cavityIndex);
+        const placement = connectorNearSplicePosition(fake, anchorConnector, connectorPositionById.get(anchorConnector.id) ?? { x: 80, y: 120 }, harness.viewerLayout.connectorRotations[anchorConnector.id] ?? 0, visualSlot, anchorNode ? measuredSize(anchorNode) : undefined);
         position = placement.position; labelSide = placement.labelSide;
       }
     } else {
@@ -307,7 +337,7 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     }
     actualNodes.push({ id: PREVIEW_SPLICE_ID, type: 'splice', position, draggable: false, selectable: false, data: { splice: fake, netName: project.nets.find((net) => net.id === splicePreview.netId)?.name ?? 'Unknown net', labelSide, wireCount: splicePreview.endpoints.length, summary: 'Proposed splice wiring', preview: true } });
     return actualNodes;
-  }, [harness.connectors, harness.splices, harness.viewerLayout.connectorPositions, harness.viewerLayout.connectorRotations, harness.viewerLayout.splicePositions, harness.wires, onRotateConnector, project.nets, selectedConnectorId, splicePreview]);
+  }, [connectorLayouts, harness.connectors, harness.splices, harness.viewerLayout.connectorPositions, harness.viewerLayout.connectorRotations, harness.viewerLayout.splicePositions, harness.wires, onRotateConnector, project.nets, selectedConnectorId, splicePreview]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(desiredNodes);
   useEffect(() => {
@@ -366,10 +396,14 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
     const target = terminalForEndpoint(wire.endpointB, nodes);
     if (!source || !target) return [];
     const labels = wireLabels.get(wire.id);
-    return [{ id: wire.id, source, target, sourceMinStraight: labels?.source?.minStraight ?? MIN_BEND_SPACING, targetMinStraight: labels?.target?.minStraight ?? MIN_BEND_SPACING }];
+    return [{ id: wire.id, displayId: wire.displayId, source, target, sourceMinStraight: labels?.source?.minStraight ?? MIN_BEND_SPACING, targetMinStraight: labels?.target?.minStraight ?? MIN_BEND_SPACING }];
   }), [globallyRoutedWires, nodes, wireLabels]);
 
-  const routingResults = useMemo<Map<string, OrthogonalRouteResult>>(() => isDragging ? new Map() : planOrthogonalRoutesV2(requests, obstacles), [isDragging, obstacles, requests]);
+  const routingDisplayIds = useMemo(() => Object.fromEntries([
+    ...harness.connectors.map((connector) => [connector.id, connector.displayId]),
+    ...harness.splices.map((splice) => [splice.id, splice.displayId]),
+  ]), [harness.connectors, harness.splices]);
+  const routingResults = useMemo<Map<string, OrthogonalRouteResult>>(() => isDragging ? new Map() : planBundleGridRoutesV3WithSplices(requests, obstacles, routingDisplayIds).results, [isDragging, obstacles, requests, routingDisplayIds]);
   const unroutedWires = useMemo(() => isDragging ? [] : globallyRoutedWires.filter((wire) => routingResults.get(wire.id)?.status !== 'ROUTED'), [globallyRoutedWires, isDragging, routingResults]);
 
   const normalEdges = useMemo<Edge[]>(() => activeWires.flatMap((wire) => {
