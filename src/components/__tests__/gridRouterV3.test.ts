@@ -3,7 +3,7 @@ import { planBundleGridRoutesV3, planBundleGridRoutesV3BeamExperiment } from '..
 import { createVehicleStressRoutingFixture, measureVehicleRouting } from '../vehicleStressRoutingFixture';
 
 describe('grid bundle router V3 spike', () => {
-  it('routes the vehicle fixture bundle-first and reports corridor progress', () => {
+  it('routes the perimeter vehicle fixture bundle-first and reports corridor progress', () => {
     const fixture = createVehicleStressRoutingFixture();
     const started = Date.now();
     const plan = planBundleGridRoutesV3(fixture.requests, fixture.obstacles, fixture.displayIds);
@@ -18,12 +18,13 @@ describe('grid bundle router V3 spike', () => {
     console.info(`[vehicle-routing-v3 bundle-groups] ${JSON.stringify(bundleStats)}`);
     expect(plan.results.size).toBe(180);
     expect(plan.corridorBundles).toBeGreaterThan(0);
-    expect(metrics.routed).toBeGreaterThan(0);
-    // Development guard tolerates shared-runner jitter. Final acceptance remains 180/180 in < 1000 ms.
-    expect(elapsedMs).toBeLessThan(3000);
-  }, 5000);
+    expect(metrics.routed).toBeGreaterThanOrEqual(160);
+    // Development guard tolerates shared-runner jitter and the much larger perimeter field.
+    // Final acceptance remains 180/180 in < 1000 ms.
+    expect(elapsedMs).toBeLessThan(4000);
+  }, 6000);
 
-  it('tests a bounded alternative-corridor beam against the greedy 118-wire baseline', () => {
+  it('keeps the bounded alternative-corridor beam at or above the 162-wire perimeter baseline', () => {
     const fixture = createVehicleStressRoutingFixture();
     const started = Date.now();
     const plan = planBundleGridRoutesV3BeamExperiment(fixture.requests, fixture.obstacles, fixture.displayIds);
@@ -31,12 +32,11 @@ describe('grid bundle router V3 spike', () => {
     const metrics = measureVehicleRouting(fixture, plan.results, elapsedMs);
     console.info(`[vehicle-routing-v3 beam] ${JSON.stringify({ ...metrics, corridorBundles: plan.corridorBundles, fallbackBundles: plan.fallbackBundles })}`);
     expect(plan.results.size).toBe(180);
-    expect(metrics.routed).toBeGreaterThanOrEqual(118);
-    // Experiment budget only; the normal router remains on the development guard above.
+    expect(metrics.routed).toBeGreaterThanOrEqual(162);
     expect(elapsedMs).toBeLessThan(8000);
   }, 10000);
 
-  it('routes both first large endpoint groups instead of sacrificing the second bundle', () => {
+  it('routes the largest cross-field bundle and still reaches the next major endpoint group', () => {
     const fixture = createVehicleStressRoutingFixture();
     const c12 = fixture.bundles.find((bundle) => bundle.elementADisplayId === 'C1' && bundle.elementBDisplayId === 'C2')!;
     const c13 = fixture.bundles.find((bundle) => bundle.elementADisplayId === 'C1' && bundle.elementBDisplayId === 'C3')!;
@@ -60,6 +60,6 @@ describe('grid bundle router V3 spike', () => {
       };
     });
     console.info(`[vehicle-routing-v3 isolated-bundles] ${JSON.stringify(isolated)}`);
-    expect(isolated.filter((item) => item.routed === item.size).length).toBeGreaterThan(0);
+    expect(isolated.filter((item) => item.routed === item.size).length).toBeGreaterThan(30);
   }, 5000);
 });
