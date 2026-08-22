@@ -18,7 +18,7 @@ export const BUNDLE_GRID_SIZE = 28;
 const EPS = 0.25;
 const FRAME_MARGIN = 18;
 const TURN_COST = 5;
-const CROSSING_COST = 16;
+const CROSSING_COST = 4;
 const CORRIDOR_MIN_RUN = 1;
 
 type Direction = 'left' | 'right' | 'up' | 'down';
@@ -275,7 +275,7 @@ function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direc
       const run = turning ? 1 : Math.min(CORRIDOR_MIN_RUN, current.run + 1);
       const nextState: State = { ...next, dir, run, crossingStraight: step.crossingAtEnd };
       const key = stateKey(nextState);
-      const g = item.g + 1 + (turning ? TURN_COST : 0) + step.crossings * CROSSING_COST;
+      const g = item.g + 1 + (turning ? TURN_COST : 0) + (step.crossings > 0 ? CROSSING_COST : 0);
       if (g + EPS >= (score.get(key) ?? Infinity)) continue;
       score.set(key, g); came.set(key, item.key); states.set(key, nextState);
       open.push({ key, state: nextState, g, f: g + gridDistance(next, target) });
