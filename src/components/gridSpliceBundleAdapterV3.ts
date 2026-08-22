@@ -11,6 +11,7 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
+import { buildRouteBundles, type ElementDisplayIds } from './routingBundles';
 import type { GridAlignmentV3 } from './gridSpliceAdapterV3';
 
 interface IncidentBranch {
@@ -18,6 +19,8 @@ interface IncidentBranch {
   end: 'source' | 'target';
   other: RouteTerminal;
 }
+
+type BundleRole = 'A' | 'B';
 
 interface BundleSplicePortV3 {
   requestId: string;
@@ -43,6 +46,10 @@ export interface BundleSpliceExpansionV3 {
 }
 
 const SIDES: CardinalSide[] = ['left', 'right', 'top', 'bottom'];
+
+function numericCompare(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+}
 
 function opposite(side: CardinalSide): CardinalSide {
   if (side === 'left') return 'right';
@@ -70,6 +77,14 @@ function physicalOption(terminal: RouteTerminal, side: CardinalSide): RouteTermi
 
 function transverseCoordinate(point: RoutePoint, outwardSide: CardinalSide): number {
   return outwardSide === 'left' || outwardSide === 'right' ? point.y : point.x;
+}
+
+/** Coordinate along the right-hand normal of an outward-facing terminal. */
+function outwardProjection(point: RoutePoint, side: CardinalSide): number {
+  if (side === 'right') return point.y;
+  if (side === 'left') return -point.y;
+  if (side === 'top') return point.x;
+  return -point.x;
 }
 
 function otherCenter(branch: IncidentBranch): RoutePoint {
@@ -143,44 +158,90 @@ function groupedByRemote(branches: IncidentBranch[]): IncidentBranch[][] {
 
 function sortedGroupsForSide(groups: IncidentBranch[][], side: CardinalSide): IncidentBranch[][] {
   return groups
-    .map((group) => group.slice().sort((left, right) => {
-      const delta = transverseCoordinate(otherCenter(left), side) - transverseCoordinate(otherCenter(right), side);
-      return delta || left.requestId.localeCompare(right.requestId, undefined, { numeric: true });
-    }))
+    .map((group) => group.slice().sort((left, right) => numericCompare(left.requestId, right.requestId)))
     .sort((left, right) => {
       const l = left.reduce((sum, branch) => sum + transverseCoordinate(otherCenter(branch), side), 0) / left.length;
       const r = right.reduce((sum, branch) => sum + transverseCoordinate(otherCenter(branch), side), 0) / right.length;
-      return l - r || left[0].requestId.localeCompare(right[0].requestId, undefined, { numeric: true });
+      return l - r || numericCompare(left[0].requestId, right[0].requestId);
     });
+}
+
+function bundleRoles(requests: RouteRequest[], displayIds: ElementDisplayIds): Map<string, Map<string, BundleRole>> {
+  const roles = new Map<string, Map<string, BundleRole>>();
+  const set = (local: string, remote: string, role: BundleRole) => {
+    const map = roles.get(local) ?? new Map<string, BundleRole>();
+    map.set(remote, role);
+    roles.set(local, map);
+  };
+  for (const bundle of buildRouteBundles(requests, displayIds)) {
+    set(bundle.elementAId, bundle.elementBId, 'A');
+    set(bundle.elementBId, bundle.elementAId, 'B');
+  }
+  return roles;
+}
+
+function offsetProjectionDirection(side: CardinalSide): number {
+  const base = { x: 0, y: 0 };
+  const p0 = shifted(base, side, 0);
+  const p1 = shifted(base, side, 1);
+  return Math.sign(outwardProjection(p1, side) - outwardProjection(p0, side)) || 1;
+}
+
+function orderGroupForOffsets(group: IncidentBranch[], role: BundleRole, side: CardinalSide): IncidentBranch[] {
+  const ascendingIds = group.slice().sort((left, right) => numericCompare(left.requestId, right.requestId));
+  const idsAscWithOutwardProjection = role === 'A';
+  const offsetsAscWithOutwardProjection = offsetProjectionDirection(side) > 0;
+  return idsAscWithOutwardProjection === offsetsAscWithOutwardProjection
+    ? ascendingIds
+    : ascendingIds.reverse();
+}
+
+function assignSidePorts(
+  terminal: RouteTerminal,
+  side: CardinalSide,
+  groups: IncidentBranch[][],
+  alignment: GridAlignmentV3,
+  roleByRemote: ReadonlyMap<string, BundleRole>,
+  ports: BundleSplicePortV3[],
+  envelopePoints: RoutePoint[],
+) {
+  const count = groups.reduce((sum, group) => sum + group.length, 0);
+  const offsets = contiguousSpliceOffsets(count);
+  const physical = physicalOption(terminal, side);
+  let slot = 0;
+  for (const group of groups) {
+    const role = roleByRemote.get(group[0].other.nodeId) ?? 'A';
+    const ordered = orderGroupForOffsets(group, role, side);
+    for (const branch of ordered) {
+      const radial = outward(physical.point, side, 2 * alignment.gridSize);
+      const point = shifted(radial, side, offsets[slot] * alignment.gridSize);
+      slot += 1;
+      const option: RouteTerminalOption = {
+        key: `${physical.key}|bundle-grid:${branch.requestId}`,
+        side,
+        point,
+      };
+      const path = internalPath(physical, option, alignment.gridSize);
+      envelopePoints.push(...path);
+      ports.push({ requestId: branch.requestId, end: branch.end, option, physical, internalPath: path });
+    }
+  }
 }
 
 function buildConnectorGeometry(
   terminal: RouteTerminal,
   branches: IncidentBranch[],
   alignment: GridAlignmentV3,
+  roleByRemote: ReadonlyMap<string, BundleRole>,
 ): BundleSpliceGeometryV3 {
   const facing = terminal.connectorFacingSide;
   if (!facing) throw new Error(`Connector-near junction ${terminal.nodeId} is missing connectorFacingSide`);
   const side = opposite(facing);
-  const physical = physicalOption(terminal, side);
   const groups = sortedGroupsForSide(groupedByRemote(branches), side);
-  const orderedBranches = groups.flat();
-  const offsets = contiguousSpliceOffsets(orderedBranches.length);
   const ports: BundleSplicePortV3[] = [];
   const envelopePoints: RoutePoint[] = terminal.options.map((option) => option.point);
 
-  orderedBranches.forEach((branch, index) => {
-    const radial = outward(physical.point, side, 2 * alignment.gridSize);
-    const point = shifted(radial, side, offsets[index] * alignment.gridSize);
-    const option: RouteTerminalOption = {
-      key: `${physical.key}|bundle-grid:${branch.requestId}`,
-      side,
-      point,
-    };
-    const path = internalPath(physical, option, alignment.gridSize);
-    envelopePoints.push(...path);
-    ports.push({ requestId: branch.requestId, end: branch.end, option, physical, internalPath: path });
-  });
+  assignSidePorts(terminal, side, groups, alignment, roleByRemote, ports, envelopePoints);
 
   return {
     nodeId: terminal.nodeId,
@@ -196,6 +257,7 @@ function buildFreeGeometry(
   terminal: RouteTerminal,
   branches: IncidentBranch[],
   alignment: GridAlignmentV3,
+  roleByRemote: ReadonlyMap<string, BundleRole>,
 ): BundleSpliceGeometryV3 {
   const c = center(terminal);
   const groups = groupedByRemote(branches);
@@ -212,21 +274,7 @@ function buildFreeGeometry(
   const envelopePoints: RoutePoint[] = terminal.options.map((option) => option.point);
   for (const side of SIDES) {
     const sideGroups = sortedGroupsForSide(bySide.get(side)!, side);
-    const sideBranches = sideGroups.flat();
-    const offsets = contiguousSpliceOffsets(sideBranches.length);
-    const physical = physicalOption(terminal, side);
-    sideBranches.forEach((branch, index) => {
-      const radial = outward(physical.point, side, 2 * alignment.gridSize);
-      const point = shifted(radial, side, offsets[index] * alignment.gridSize);
-      const option: RouteTerminalOption = {
-        key: `${physical.key}|bundle-grid:${branch.requestId}`,
-        side,
-        point,
-      };
-      const path = internalPath(physical, option, alignment.gridSize);
-      envelopePoints.push(...path);
-      ports.push({ requestId: branch.requestId, end: branch.end, option, physical, internalPath: path });
-    });
+    assignSidePorts(terminal, side, sideGroups, alignment, roleByRemote, ports, envelopePoints);
   }
 
   return {
@@ -243,6 +291,7 @@ export function expandGridSplicesBundleV3(
   requests: RouteRequest[],
   obstacles: RouteObstacle[],
   alignment: GridAlignmentV3,
+  displayIds: ElementDisplayIds = {},
 ): BundleSpliceExpansionV3 {
   const terminalByNode = new Map<string, RouteTerminal>();
   for (const request of requests) {
@@ -254,11 +303,13 @@ export function expandGridSplicesBundleV3(
 
   const geometries = new Map<string, BundleSpliceGeometryV3>();
   const assigned = new Map<string, BundleSplicePortV3>();
+  const roles = bundleRoles(requests, displayIds);
   for (const [nodeId, terminal] of terminalByNode) {
     const branches = incidentBranches(nodeId, requests);
+    const roleByRemote = roles.get(nodeId) ?? new Map<string, BundleRole>();
     const geometry = terminal.junctionPlacement === 'CONNECTOR'
-      ? buildConnectorGeometry(terminal, branches, alignment)
-      : buildFreeGeometry(terminal, branches, alignment);
+      ? buildConnectorGeometry(terminal, branches, alignment, roleByRemote)
+      : buildFreeGeometry(terminal, branches, alignment, roleByRemote);
     geometries.set(nodeId, geometry);
     for (const port of geometry.ports) assigned.set(`${port.requestId}:${port.end}`, port);
   }
