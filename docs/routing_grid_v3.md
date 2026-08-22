@@ -131,13 +131,15 @@ Example electrical cavities may be displayed as:
 
 The rules are:
 1. connected cavities are grouped by their physical endpoint-pair bundle,
-2. larger groups are placed first,
-3. equal-size groups are ordered by the remote element display ID using numeric comparison,
-4. cavities inside one bundle occupy contiguous visual slots,
-5. the wire order inside a group is deterministic and may be permuted as layout state to reduce breakout crossings,
-6. multi-wire groups are separated from neighboring groups by `1G = 28 px` blank visual space by default,
-7. one-wire groups are packed together without one blank row per wire,
-8. unused cavities remain visible and retain their cavity IDs; they are placed as a compact trailing block unless later user layout rules override this.
+2. every multi-wire bundle occupies one contiguous visual block,
+3. complete bundle blocks may be moved relative to one another as viewer-only layout state,
+4. for left/right-facing connector exits, automatic block order should normally follow the Y position of the remote routing element; for top/bottom exits the equivalent X position is used,
+5. geometry-driven block order is independent of bundle routing priority: the global router still plans larger bundles first,
+6. when no useful geometry hint exists, deterministic fallback ordering uses group size and numeric remote element ID,
+7. the wire order inside a group is deterministic and may be permuted as layout state to reduce breakout crossings,
+8. multi-wire groups are separated from neighboring groups by `1G = 28 px` blank visual space by default,
+9. one-wire groups are packed together without one blank row per wire,
+10. unused cavities remain visible and retain their cavity IDs; they are placed as a compact trailing block unless later user layout rules override this.
 
 This connector-level rearrangement replaces the earlier experimental approach of borrowing another wire's terminal coordinate. A wire always starts at the viewer location of **its own physical cavity**.
 
