@@ -7,6 +7,10 @@ export interface ConnectorLayoutPin {
   remoteOrderHint?: number;
   /** Viewer-only order inside one physical bundle block. Electrical cavity identity is unchanged. */
   wireOrderHint?: number;
+  /** Viewer-only empty pin-pitch slots immediately before this cavity. */
+  reservedBeforeSlots?: number;
+  /** Viewer-only empty pin-pitch slots immediately after this cavity. */
+  reservedAfterSlots?: number;
 }
 
 export interface ConnectorLayoutInput {
@@ -50,6 +54,10 @@ function numericCompare(left: string, right: string): number {
  * bundle crossovers without coupling electrical cavity numbering to viewer row
  * position. One-wire groups remain packed together at the tail so sparse wiring
  * does not make a connector huge. Unused cavities follow in physical order.
+ *
+ * A connector-near splice anchor may additionally reserve empty visual slots on
+ * either side of its cavity. Those slots are routing clearance only; they never
+ * create or renumber electrical cavities.
  */
 export function buildConnectorVisualLayout(input: ConnectorLayoutInput): ConnectorVisualLayout {
   const byBundle = new Map<string, ConnectorLayoutPin[]>();
@@ -107,8 +115,10 @@ export function buildConnectorVisualLayout(input: ConnectorLayoutInput): Connect
   groups.forEach((group, index) => {
     const startSlot = slot;
     for (const pin of group.pins) {
+      slot += Math.max(0, pin.reservedBeforeSlots ?? 0);
       slotByCavityIndex.set(pin.cavityIndex, slot);
       slot += 1;
+      slot += Math.max(0, pin.reservedAfterSlots ?? 0);
     }
     visualGroups.push({
       bundleKey: group.bundleKey,
