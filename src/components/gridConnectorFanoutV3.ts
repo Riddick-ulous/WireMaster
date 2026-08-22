@@ -359,6 +359,9 @@ function recompute(result: OrthogonalRouteResult, points: RoutePoint[]): Orthogo
   if (result.status !== 'ROUTED') return result;
   const simplified = simplifyRoute(points);
   const segments = routeSegments(simplified);
+  if (segments.length !== Math.max(0, simplified.length - 1)) {
+    return { status: 'UNROUTED', reason: 'NO_VALID_PATH' };
+  }
   return {
     ...result,
     points: simplified,
@@ -372,18 +375,30 @@ export function finalizeGridConnectorFanoutRoutesV3(
   geometries: Map<string, ConnectorFanoutGeometryV3>,
 ): Map<string, OrthogonalRouteResult> {
   if (!geometries.size) return results;
-  const ports = new Map<string, ConnectorFanoutPortV3>();
+  const assignedPorts = new Map<string, { nodeId: string; port: ConnectorFanoutPortV3 }>();
+  const portsByVirtualHandle = new Map<string, { nodeId: string; port: ConnectorFanoutPortV3 }>();
   for (const geometry of geometries.values()) {
-    for (const port of geometry.ports) ports.set(`${port.requestId}:${port.end}`, port);
+    for (const port of geometry.ports) {
+      const indexed = { nodeId: geometry.nodeId, port };
+      assignedPorts.set(`${port.requestId}:${port.end}`, indexed);
+      portsByVirtualHandle.set(port.egress.key, indexed);
+    }
   }
+  const selectedPort = (requestId: string, end: 'source' | 'target', handleId: string) => {
+    const assigned = assignedPorts.get(`${requestId}:${end}`);
+    const selected = portsByVirtualHandle.get(handleId);
+    return selected && assigned && selected.nodeId === assigned.nodeId
+      ? selected.port
+      : assigned?.port;
+  };
   const finalized = new Map<string, OrthogonalRouteResult>();
   for (const [requestId, result] of results) {
     if (result.status !== 'ROUTED') {
       finalized.set(requestId, result);
       continue;
     }
-    const sourcePort = ports.get(`${requestId}:source`);
-    const targetPort = ports.get(`${requestId}:target`);
+    const sourcePort = selectedPort(requestId, 'source', result.sourceHandleId);
+    const targetPort = selectedPort(requestId, 'target', result.targetHandleId);
     let points = result.points.slice();
     let sourceHandleId = result.sourceHandleId;
     let targetHandleId = result.targetHandleId;

@@ -362,6 +362,12 @@ function recompute(result: OrthogonalRouteResult, points: RoutePoint[]): Orthogo
   if (result.status !== 'ROUTED') return result;
   const simplified = simplifyRoute(points);
   const segments = routeSegments(simplified);
+  // Finalization is the boundary between virtual viewer slots and physical
+  // splice geometry. Never let a broken slot hand-off escape as a diagonal
+  // "ROUTED" edge: every surviving point pair must still be grid-orthogonal.
+  if (segments.length !== Math.max(0, simplified.length - 1)) {
+    return { status: 'UNROUTED', reason: 'NO_VALID_PATH' };
+  }
   return {
     ...result,
     points: simplified,
@@ -375,18 +381,34 @@ export function finalizeGridSpliceBundleRoutesV3(
   geometries: Map<string, BundleSpliceGeometryV3>,
 ): Map<string, OrthogonalRouteResult> {
   if (!geometries.size) return results;
-  const ports = new Map<string, BundleSplicePortV3>();
+  const assignedPorts = new Map<string, { nodeId: string; port: BundleSplicePortV3 }>();
+  const portsByVirtualHandle = new Map<string, { nodeId: string; port: BundleSplicePortV3 }>();
   for (const geometry of geometries.values()) {
-    for (const port of geometry.ports) ports.set(`${port.requestId}:${port.end}`, port);
+    for (const port of geometry.ports) {
+      const indexed = { nodeId: geometry.nodeId, port };
+      assignedPorts.set(`${port.requestId}:${port.end}`, indexed);
+      portsByVirtualHandle.set(port.option.key, indexed);
+    }
   }
+  const selectedPort = (requestId: string, end: 'source' | 'target', handleId: string) => {
+    const assigned = assignedPorts.get(`${requestId}:${end}`);
+    const selected = portsByVirtualHandle.get(handleId);
+    // A bundle corridor may permute viewer slots at a common splice to avoid
+    // crossings. Finalize the route through the slot it actually selected,
+    // while never allowing a handle from a different electrical node to leak
+    // across endpoint identity.
+    return selected && assigned && selected.nodeId === assigned.nodeId
+      ? selected.port
+      : assigned?.port;
+  };
   const finalized = new Map<string, OrthogonalRouteResult>();
   for (const [requestId, result] of results) {
     if (result.status !== 'ROUTED') {
       finalized.set(requestId, result);
       continue;
     }
-    const sourcePort = ports.get(`${requestId}:source`);
-    const targetPort = ports.get(`${requestId}:target`);
+    const sourcePort = selectedPort(requestId, 'source', result.sourceHandleId);
+    const targetPort = selectedPort(requestId, 'target', result.targetHandleId);
     let points = result.points.slice();
     let sourceHandleId = result.sourceHandleId;
     let targetHandleId = result.targetHandleId;
