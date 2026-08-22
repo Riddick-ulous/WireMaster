@@ -2,6 +2,7 @@ import {
   collinearOverlap,
   manhattan,
   perpendicularIntersection,
+  rectForObstacle,
   routeSegments,
   segmentCrossesObstacle,
   simplifyRoute,
@@ -52,6 +53,15 @@ function ownEndpointBodyException(request: RouteRequest, obstacle: RouteObstacle
     || (obstacle.nodeId === request.target.nodeId && segmentIndex === segmentCount - 1);
 }
 
+function segmentBlockers(request: RouteRequest, a: RoutePoint, b: RoutePoint, obstacles: RouteObstacle[]): RouteObstacle[] {
+  const segment = routeSegments([a, b])[0];
+  if (!segment) return [];
+  return obstacles.filter((obstacle) => {
+    if (obstacle.id === `${request.id}-a-label` || obstacle.id === `${request.id}-b-label`) return false;
+    return segmentCrossesObstacle(segment, obstacle);
+  });
+}
+
 function routeAvoidsObstacles(request: RouteRequest, points: RoutePoint[], obstacles: RouteObstacle[]): boolean {
   const segments = routeSegments(points);
   if (!segments.length) return false;
@@ -66,22 +76,24 @@ function routeAvoidsObstacles(request: RouteRequest, points: RoutePoint[], obsta
   return true;
 }
 
-function routesDoNotIntersect(routes: RoutePoint[][]): boolean {
+function bundleIntersections(routes: RoutePoint[][]): { valid: boolean; crossings: number } {
   const segments = routes.map((points) => routeSegments(points));
+  let crossings = 0;
   for (let left = 0; left < segments.length; left += 1) {
     for (let right = left + 1; right < segments.length; right += 1) {
       for (const a of segments[left]) {
         for (const b of segments[right]) {
           if (a.orientation === b.orientation) {
-            if (collinearOverlap(a, b) > EPS) return false;
+            if (collinearOverlap(a, b) > EPS) return { valid: false, crossings };
           } else if (perpendicularIntersection(a, b)) {
-            return false;
+            // Controlled 90-degree crossings are allowed in the local breakout.
+            crossings += 1;
           }
         }
       }
     }
   }
-  return true;
+  return { valid: true, crossings };
 }
 
 function minimumRunIsGrid(points: RoutePoint[]): boolean {
@@ -116,26 +128,75 @@ function buildEntries(bundle: RouteBundle): { entries: HairpinEntry[]; side: Hor
   entries.sort((left, right) => left.sourcePortal.y - right.sourcePortal.y
     || left.request.id.localeCompare(right.request.id, undefined, { numeric: true }));
 
-  // A clean nested hairpin requires the target block to be visually reversed.
-  // Cavity identity is unchanged; only its viewer slot may move beforehand.
+  // Reversing one viewer block gives the nested U-turn a deterministic order.
+  // Cavity/handle identity remains attached to the wire itself.
   for (let index = 1; index < entries.length; index += 1) {
     if (entries[index - 1].targetPortal.y <= entries[index].targetPortal.y + EPS) return null;
   }
   return { entries, side };
 }
 
-function buildRoutes(entries: HairpinEntry[], side: HorizontalSide, inwardColumn: number): { routes: RoutePoint[][]; turnColumns: number[] } {
+function escapeBridgeY(entries: HairpinEntry[], targetBody: RouteObstacle): number {
+  const rect = rectForObstacle(targetBody);
+  const minSourceY = Math.min(...entries.map((entry) => entry.sourcePortal.y));
+  const maxSourceY = Math.max(...entries.map((entry) => entry.sourcePortal.y));
+  const sourceCenter = (minSourceY + maxSourceY) / 2;
+  const targetCenter = (rect.top + rect.bottom) / 2;
+  return sourceCenter <= targetCenter
+    ? minSourceY - HAIRPIN_GRID_SIZE
+    : maxSourceY + HAIRPIN_GRID_SIZE;
+}
+
+function preObstacleColumn(targetBody: RouteObstacle, side: HorizontalSide): number {
+  const rect = rectForObstacle(targetBody);
+  return side === 'right'
+    ? Math.floor((rect.left - EPS) / HAIRPIN_GRID_SIZE) * HAIRPIN_GRID_SIZE
+    : Math.ceil((rect.right + EPS) / HAIRPIN_GRID_SIZE) * HAIRPIN_GRID_SIZE;
+}
+
+function buildRoutes(entries: HairpinEntry[], side: HorizontalSide, inwardColumn: number, obstacles: RouteObstacle[]): { routes: RoutePoint[][]; turnColumns: number[] } {
   const sign = side === 'right' ? 1 : -1;
   const width = entries.length;
   const turnColumns = entries.map((_, index) => inwardColumn + sign * (width - 1 - index) * HAIRPIN_GRID_SIZE);
-  const routes = entries.map((entry, index) => simplifyRoute([
-    entry.sourcePoint,
-    entry.sourcePortal,
-    { x: turnColumns[index], y: entry.sourcePortal.y },
-    { x: turnColumns[index], y: entry.targetPortal.y },
-    entry.targetPortal,
-    entry.targetPoint,
-  ]));
+  const targetNodeId = entries[0].request.target.nodeId;
+  const targetBody = obstacles.find((obstacle) => obstacle.nodeId === targetNodeId && (obstacle.kind === 'node' || obstacle.kind === undefined));
+  const bridgeY = targetBody ? escapeBridgeY(entries, targetBody) : 0;
+  const basePreColumn = targetBody ? preObstacleColumn(targetBody, side) : 0;
+  let escapeRank = 0;
+
+  const routes = entries.map((entry, index) => {
+    const simpleStart = entry.sourcePortal;
+    const simpleTurn = { x: turnColumns[index], y: entry.sourcePortal.y };
+    const blockers = segmentBlockers(entry.request, simpleStart, simpleTurn, obstacles)
+      .filter((obstacle) => obstacle.nodeId !== entry.request.source.nodeId);
+
+    let points: RoutePoint[];
+    if (targetBody && blockers.some((obstacle) => obstacle.id === targetBody.id)) {
+      const preColumn = basePreColumn - sign * escapeRank * HAIRPIN_GRID_SIZE;
+      const localBridgeY = bridgeY + (bridgeY < entry.sourcePortal.y ? -escapeRank : escapeRank) * HAIRPIN_GRID_SIZE;
+      escapeRank += 1;
+      points = [
+        entry.sourcePoint,
+        entry.sourcePortal,
+        { x: preColumn, y: entry.sourcePortal.y },
+        { x: preColumn, y: localBridgeY },
+        { x: turnColumns[index], y: localBridgeY },
+        { x: turnColumns[index], y: entry.targetPortal.y },
+        entry.targetPortal,
+        entry.targetPoint,
+      ];
+    } else {
+      points = [
+        entry.sourcePoint,
+        entry.sourcePortal,
+        simpleTurn,
+        { x: turnColumns[index], y: entry.targetPortal.y },
+        entry.targetPortal,
+        entry.targetPoint,
+      ];
+    }
+    return simplifyRoute(points);
+  });
   return { routes, turnColumns };
 }
 
@@ -150,9 +211,10 @@ export function planSameFacingHairpinBundleV3(bundle: RouteBundle, obstacles: Ro
 
   for (let outwardSteps = 1; outwardSteps <= MAX_OUTWARD_SEARCH_STEPS; outwardSteps += 1) {
     const inwardColumn = snapOutwardX(outerReference + sign * outwardSteps * HAIRPIN_GRID_SIZE, side);
-    const { routes, turnColumns } = buildRoutes(entries, side, inwardColumn);
+    const { routes, turnColumns } = buildRoutes(entries, side, inwardColumn, obstacles);
     if (routes.some((points) => !minimumRunIsGrid(points))) continue;
-    if (!routesDoNotIntersect(routes)) continue;
+    const intersections = bundleIntersections(routes);
+    if (!intersections.valid) continue;
     if (routes.some((points, index) => !routeAvoidsObstacles(entries[index].request, points, obstacles))) continue;
 
     const results = new Map<string, OrthogonalRouteResult>();
@@ -168,7 +230,7 @@ export function planSameFacingHairpinBundleV3(bundle: RouteBundle, obstacles: Ro
         sourceSide: entry.request.source.options[0].side,
         targetSide: entry.request.target.options[0].side,
         points,
-        crossings: 0,
+        crossings: intersections.crossings,
         bends: Math.max(0, segments.length - 1),
         length: segments.reduce((sum, segment) => sum + manhattan(segment.a, segment.b), 0),
       });
