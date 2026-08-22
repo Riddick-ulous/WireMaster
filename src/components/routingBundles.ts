@@ -29,6 +29,25 @@ function canonicalPair(leftId: string, rightId: string, displayIds: ElementDispl
   return { elementAId: rightId, elementBId: leftId, elementADisplayId: rightDisplay, elementBDisplayId: leftDisplay };
 }
 
+function terminalForElement(request: RouteRequest, elementId: string): RouteTerminal {
+  if (request.source.nodeId === elementId) return request.source;
+  if (request.target.nodeId === elementId) return request.target;
+  throw new Error(`Wire ${request.id} is not connected to routing element ${elementId}`);
+}
+
+function representativeCoordinate(terminal: RouteTerminal, axis: 'x' | 'y'): number {
+  if (!terminal.options.length) return 0;
+  return terminal.options.reduce((sum, option) => sum + option.point[axis], 0) / terminal.options.length;
+}
+
+function bundleSpan(bundle: RouteBundle): number {
+  if (!bundle.requests.length) return 0;
+  const source = terminalForElement(bundle.requests[0], bundle.elementAId);
+  const target = terminalForElement(bundle.requests[0], bundle.elementBId);
+  return Math.abs(representativeCoordinate(source, 'x') - representativeCoordinate(target, 'x'))
+    + Math.abs(representativeCoordinate(source, 'y') - representativeCoordinate(target, 'y'));
+}
+
 export function buildRouteBundles(requests: RouteRequest[], displayIds: ElementDisplayIds = {}): RouteBundle[] {
   const grouped = new Map<string, RouteBundle>();
   for (const request of requests) {
@@ -48,23 +67,16 @@ export function buildRouteBundles(requests: RouteRequest[], displayIds: ElementD
 
   return [...grouped.values()].sort((left, right) => {
     if (left.requests.length !== right.requests.length) return right.requests.length - left.requests.length;
+    // Equal-width bundles compete for similar routing capacity. Lay the longer,
+    // less locally flexible corridor first; short/local bundles can fit around it.
+    const span = bundleSpan(right) - bundleSpan(left);
+    if (Math.abs(span) > 0.25) return span;
     const first = numericCompare(left.elementADisplayId, right.elementADisplayId);
     if (first) return first;
     const second = numericCompare(left.elementBDisplayId, right.elementBDisplayId);
     if (second) return second;
     return numericCompare(left.key, right.key);
   });
-}
-
-function terminalForElement(request: RouteRequest, elementId: string): RouteTerminal {
-  if (request.source.nodeId === elementId) return request.source;
-  if (request.target.nodeId === elementId) return request.target;
-  throw new Error(`Wire ${request.id} is not connected to routing element ${elementId}`);
-}
-
-function representativeCoordinate(terminal: RouteTerminal, axis: 'x' | 'y'): number {
-  if (!terminal.options.length) return 0;
-  return terminal.options.reduce((sum, option) => sum + option.point[axis], 0) / terminal.options.length;
 }
 
 /**
