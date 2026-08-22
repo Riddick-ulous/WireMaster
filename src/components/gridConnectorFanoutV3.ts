@@ -92,6 +92,53 @@ function withTransverse(point: RoutePoint, physicalSide: CardinalSide, value: nu
   return sideIsHorizontal(physicalSide) ? { x: point.x, y: value } : { x: value, y: point.y };
 }
 
+function snapOutward(value: number, origin: number, grid: number, side: CardinalSide): number {
+  const n = (value - origin) / grid;
+  const positive = side === 'right' || side === 'bottom';
+  return origin + (positive ? Math.ceil(n - 1e-9) : Math.floor(n + 1e-9)) * grid;
+}
+
+/**
+ * The physical connector edge does not have to share the routing-grid phase.
+ * The local fanout therefore keeps the physical normal lead continuous and
+ * transfers to one common global grid only at its derived egress.
+ */
+function snappedTurn(
+  raw: RoutePoint,
+  physicalSide: CardinalSide,
+  alignment: GridAlignmentV3,
+): RoutePoint {
+  if (sideIsHorizontal(physicalSide)) {
+    return {
+      x: snapOutward(raw.x, alignment.originX, alignment.gridSize, physicalSide),
+      y: raw.y,
+    };
+  }
+  return {
+    x: raw.x,
+    y: snapOutward(raw.y, alignment.originY, alignment.gridSize, physicalSide),
+  };
+}
+
+function snappedEgress(
+  turn: RoutePoint,
+  boundary: number,
+  physicalSide: CardinalSide,
+  escapeSide: CardinalSide,
+  alignment: GridAlignmentV3,
+): RoutePoint {
+  if (sideIsHorizontal(physicalSide)) {
+    return {
+      x: turn.x,
+      y: snapOutward(boundary, alignment.originY, alignment.gridSize, escapeSide),
+    };
+  }
+  return {
+    x: snapOutward(boundary, alignment.originX, alignment.gridSize, escapeSide),
+    y: turn.y,
+  };
+}
+
 function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBranch[] {
   const out: IncidentBranch[] = [];
   for (const request of requests) {
@@ -253,10 +300,11 @@ function buildGeometry(
     const key = `${branch.requestId}:${branch.end}`;
     const physical = physicalOption(branch);
     const lane = laneByRequest.get(key)!;
-    const turn = outward(physical.point, physicalSide, (baseLane + lane) * grid);
+    const rawTurn = outward(physical.point, physicalSide, (baseLane + lane) * grid);
+    const turn = snappedTurn(rawTurn, physicalSide, alignment);
     const escapeSide = negativeIds.has(key) ? negativeEscape(physicalSide) : positiveEscape(physicalSide);
     const boundary = negativeIds.has(key) ? negativeBoundary : positiveBoundary;
-    const egressPoint = withTransverse(turn, physicalSide, boundary);
+    const egressPoint = snappedEgress(turn, boundary, physicalSide, escapeSide, alignment);
     const egress: RouteTerminalOption = {
       key: `${physical.key}|fanout:${branch.requestId}`,
       side: escapeSide,
