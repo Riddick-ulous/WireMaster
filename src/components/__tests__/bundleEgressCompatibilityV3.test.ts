@@ -55,24 +55,23 @@ describe('bundle egress compatibility after connector fanout', () => {
       }];
     });
     console.info(`[vehicle-routing-v3 egress-compat-bundle-splice] multiwire=${bundles.length} compatible=${bundles.length - failures.length} incompatible=${failures.length}`);
-    console.info(`[vehicle-routing-v3 egress-compat-bundle-splice failures] ${JSON.stringify(failures)}`);
 
     const allObstacles = fanout.obstacles;
-    const noLabels = allObstacles.filter((obstacle) => obstacle.kind !== 'label');
-    const noFanIn = allObstacles.filter((obstacle) => !obstacle.id.startsWith('grid-bundle-fanin-'));
-    const bodiesOnly = allObstacles.filter((obstacle) => obstacle.kind === 'node' && !obstacle.id.startsWith('grid-bundle-fanin-'));
-
-    const isolated = bundles.map((bundle) => ({
-      pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
-      size: bundle.requests.length,
-      all: routeBundle(bundle, allObstacles, fixture.displayIds),
-      noLabels: routeBundle(bundle, noLabels, fixture.displayIds),
-      noFanIn: routeBundle(bundle, noFanIn, fixture.displayIds),
-      bodiesOnly: routeBundle(bundle, bodiesOnly, fixture.displayIds),
-    }));
+    const bodyObstacles = allObstacles.filter((obstacle) => obstacle.kind === 'node' && !obstacle.id.startsWith('grid-bundle-fanin-'));
+    const isolated = bundles.map((bundle) => {
+      const ownBodies = bodyObstacles.filter((obstacle) => obstacle.nodeId === bundle.elementAId || obstacle.nodeId === bundle.elementBId);
+      return {
+        pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
+        size: bundle.requests.length,
+        all: routeBundle(bundle, allObstacles, fixture.displayIds),
+        noObstacles: routeBundle(bundle, [], fixture.displayIds),
+        ownBodies: routeBundle(bundle, ownBodies, fixture.displayIds),
+        allBodies: routeBundle(bundle, bodyObstacles, fixture.displayIds),
+      };
+    });
     const isolatedFailures = isolated.filter((item) => item.all !== item.size);
     console.info(`[vehicle-routing-v3 egress-isolated] complete=${isolated.length - isolatedFailures.length}/${isolated.length}`);
-    console.info(`[vehicle-routing-v3 egress-isolated blockers] ${JSON.stringify(isolatedFailures)}`);
+    console.info(`[vehicle-routing-v3 egress-isolated body-classification] ${JSON.stringify(isolatedFailures)}`);
 
     expect(bundles.length).toBeGreaterThan(0);
     expect(failures).toEqual([]);
