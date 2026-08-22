@@ -5,6 +5,8 @@ export interface ConnectorLayoutPin {
   remoteElementDisplayId?: string;
   /** Viewer-axis position of the remote routing element. Used only for block ordering. */
   remoteOrderHint?: number;
+  /** Viewer-only order inside one physical bundle block. Electrical cavity identity is unchanged. */
+  wireOrderHint?: number;
 }
 
 export interface ConnectorLayoutInput {
@@ -72,7 +74,14 @@ export function buildConnectorVisualLayout(input: ConnectorLayoutInput): Connect
       bundleKey,
       remoteElementDisplayId: pins[0].remoteElementDisplayId!,
       remoteOrderHint: pins.find((pin) => pin.remoteOrderHint !== undefined)?.remoteOrderHint,
-      pins: pins.slice().sort((left, right) => numericCompare(left.wireId!, right.wireId!) || left.cavityIndex - right.cavityIndex),
+      pins: pins.slice().sort((left, right) => {
+        if (left.wireOrderHint !== undefined && right.wireOrderHint !== undefined && left.wireOrderHint !== right.wireOrderHint) {
+          return left.wireOrderHint - right.wireOrderHint;
+        }
+        if (left.wireOrderHint !== undefined && right.wireOrderHint === undefined) return -1;
+        if (left.wireOrderHint === undefined && right.wireOrderHint !== undefined) return 1;
+        return numericCompare(left.wireId!, right.wireId!) || left.cavityIndex - right.cavityIndex;
+      }),
     }))
     .sort((left, right) => {
       const leftMulti = left.pins.length > 1;
