@@ -1,6 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { planBundleGridRoutesV3 } from '../gridBundleRouterV3';
 import { inferGridAlignmentV3 } from '../gridBundleRouterV3Splices';
 import { planBundleGridRoutesV3FanoutAtomicWithSplices } from '../gridBundleRouterV3Fanout';
 import { expandGridConnectorFanoutV3 } from '../gridConnectorFanoutV3';
@@ -25,8 +24,18 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
     const connectorIds = connectorNodeIds(fixture);
     const alignment = inferGridAlignmentV3(fixture.requests);
     const spliceExpansion = expandGridSplicesV3(fixture.requests, fixture.obstacles, alignment);
-    const fanout = expandGridConnectorFanoutV3(spliceExpansion.requests, spliceExpansion.obstacles, alignment, connectorIds);
-    const activeConnectorIds = new Set(spliceExpansion.requests.flatMap((request) => [request.source.nodeId, request.target.nodeId]).filter((nodeId) => connectorIds.has(nodeId)));
+    const fanout = expandGridConnectorFanoutV3(
+      spliceExpansion.requests,
+      spliceExpansion.obstacles,
+      alignment,
+      connectorIds,
+      fixture.displayIds,
+    );
+    const activeConnectorIds = new Set(
+      spliceExpansion.requests
+        .flatMap((request) => [request.source.nodeId, request.target.nodeId])
+        .filter((nodeId) => connectorIds.has(nodeId)),
+    );
 
     expect(fanout.geometries.size).toBe(activeConnectorIds.size);
     for (const geometry of fanout.geometries.values()) {
@@ -37,42 +46,39 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
       });
       expect(new Set(radial).size, geometry.nodeId).toBe(radial.length);
     }
-
-    const normalStarted = Date.now();
-    const normal = planBundleGridRoutesV3(fanout.requests, fanout.obstacles, fixture.displayIds);
-    console.info(`[vehicle-routing-v3 fanout-normal] routed=${routedCount(normal.results)}/${fixture.requests.length} elapsedMs=${Date.now() - normalStarted} corridorBundles=${normal.corridorBundles} fallbackBundles=${normal.fallbackBundles}`);
   });
 
-  it('diagnoses every transformed bundle independently with the pure global bundle core', () => {
+  it('keeps every transformed endpoint-pair bundle independently routable on an empty grid', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     const alignment = inferGridAlignmentV3(fixture.requests);
-    const spliceExpansion = expandGridSplicesBundleV3(fixture.requests, fixture.obstacles, alignment);
+    const spliceExpansion = expandGridSplicesBundleV3(
+      fixture.requests,
+      fixture.obstacles,
+      alignment,
+      fixture.displayIds,
+    );
     const fanout = expandGridConnectorFanoutV3(
       spliceExpansion.requests,
       spliceExpansion.obstacles,
       alignment,
       connectorNodeIds(fixture),
+      fixture.displayIds,
     );
     const bundles = buildRouteBundles(fanout.requests, fixture.displayIds);
-
-    const diagnostics = bundles.map((bundle) => {
-      const withObstacles = planGlobalBundleGridRoutesV3(bundle.requests, fanout.obstacles, fixture.displayIds);
-      const withoutObstacles = planGlobalBundleGridRoutesV3(bundle.requests, [], fixture.displayIds);
-      return {
-        pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
-        size: bundle.requests.length,
-        withObstacles: routedCount(withObstacles.results),
-        withoutObstacles: routedCount(withoutObstacles.results),
-        orderMismatch: withoutObstacles.endpointOrderMismatchBundles,
-      };
+    const failures = bundles.flatMap((bundle) => {
+      const plan = planGlobalBundleGridRoutesV3(bundle.requests, [], fixture.displayIds);
+      const routed = routedCount(plan.results);
+      return routed === bundle.requests.length && plan.endpointOrderMismatchBundles === 0
+        ? []
+        : [{ pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`, routed, size: bundle.requests.length }];
     });
-    const failures = diagnostics.filter((item) => item.withoutObstacles !== item.size);
-    console.info(`[vehicle-routing-v3 pure-bundle-isolated] complete=${diagnostics.length - failures.length}/${diagnostics.length}`);
+
+    console.info(`[vehicle-routing-v3 pure-bundle-isolated] complete=${bundles.length - failures.length}/${bundles.length}`);
     console.info(`[vehicle-routing-v3 pure-bundle-isolated failures] ${JSON.stringify(failures)}`);
-    expect(bundles.length).toBeGreaterThan(0);
+    expect(failures).toEqual([]);
   }, 60000);
 
-  it('routes the 40-splice harness through connector fanouts with pure global bundle acceptance', () => {
+  it('routes the 40-splice harness through connector fanouts with atomic global bundles', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     const started = Date.now();
     const plan = planBundleGridRoutesV3FanoutAtomicWithSplices(
@@ -91,12 +97,19 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
         ? [{ pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`, routed: count, size: bundle.requests.length }]
         : [];
     });
+    const unrouted = plan.bundleOrder.flatMap((bundle) => {
+      const count = bundle.requests.filter((request) => plan.results.get(request.id)?.status === 'ROUTED').length;
+      return count === bundle.requests.length
+        ? []
+        : [{ pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`, size: bundle.requests.length }];
+    });
 
     console.info(`[vehicle-routing-v3 fanout-bundle] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} connectorFanouts=${plan.connectorFanouts} routedBundles=${plan.routedBundles} unroutedBundles=${plan.unroutedBundles} endpointOrderMismatchBundles=${plan.endpointOrderMismatchBundles}`);
-    console.info(`[vehicle-routing-v3 fanout-bundle partial] ${JSON.stringify(partial)}`);
+    console.info(`[vehicle-routing-v3 fanout-bundle unrouted] ${JSON.stringify(unrouted)}`);
 
     expect(plan.results.size).toBe(fixture.requests.length);
     expect(plan.connectorFanouts).toBeGreaterThan(0);
+    expect(plan.endpointOrderMismatchBundles).toBe(0);
     expect(partial).toEqual([]);
     for (const request of fixture.requests) {
       const result = plan.results.get(request.id);
