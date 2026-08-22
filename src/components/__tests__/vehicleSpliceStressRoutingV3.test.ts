@@ -10,7 +10,6 @@ import {
   connectorNearReservedSlots,
   createVehicleSpliceStressRoutingFixture,
 } from '../vehicleSpliceStressRoutingFixture';
-import type { RouteRequest } from '../routingGeometry';
 
 const GRID = 28;
 
@@ -38,67 +37,6 @@ function expectSideGap(fixture: ReturnType<typeof createVehicleSpliceStressRouti
     const gap = horizontal ? current.x - (previous.x + previous.width) : current.y - (previous.y + previous.height);
     expect(gap, `${side} ${ordered[index - 1].displayId}->${ordered[index].displayId}`).toBeGreaterThanOrEqual(VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS * GRID - 0.25);
   }
-}
-
-function withConnectorExitGrids(requests: RouteRequest[], grids: number): RouteRequest[] {
-  const exit = grids * GRID;
-  return requests.map((request) => ({
-    ...request,
-    sourceMinStraight: request.source.nodeId.startsWith('vehicle-c') ? exit : request.sourceMinStraight,
-    targetMinStraight: request.target.nodeId.startsWith('vehicle-c') ? exit : request.targetMinStraight,
-  }));
-}
-
-function withStaggeredConnectorBundleExits(requests: RouteRequest[]): RouteRequest[] {
-  const remoteIdsByConnector = new Map<string, Set<string>>();
-  for (const request of requests) {
-    if (request.source.nodeId.startsWith('vehicle-c')) {
-      const remotes = remoteIdsByConnector.get(request.source.nodeId) ?? new Set<string>();
-      remotes.add(request.target.nodeId);
-      remoteIdsByConnector.set(request.source.nodeId, remotes);
-    }
-    if (request.target.nodeId.startsWith('vehicle-c')) {
-      const remotes = remoteIdsByConnector.get(request.target.nodeId) ?? new Set<string>();
-      remotes.add(request.source.nodeId);
-      remoteIdsByConnector.set(request.target.nodeId, remotes);
-    }
-  }
-
-  const depthByPair = new Map<string, number>();
-  const depthCycle = [4, 6, 5, 7];
-  for (const [connectorId, remotes] of remoteIdsByConnector) {
-    [...remotes]
-      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
-      .forEach((remoteId, index) => depthByPair.set(`${connectorId}>${remoteId}`, depthCycle[index % depthCycle.length] * GRID));
-  }
-
-  return requests.map((request) => ({
-    ...request,
-    sourceMinStraight: request.source.nodeId.startsWith('vehicle-c')
-      ? depthByPair.get(`${request.source.nodeId}>${request.target.nodeId}`) ?? request.sourceMinStraight
-      : request.sourceMinStraight,
-    targetMinStraight: request.target.nodeId.startsWith('vehicle-c')
-      ? depthByPair.get(`${request.target.nodeId}>${request.source.nodeId}`) ?? request.targetMinStraight
-      : request.targetMinStraight,
-  }));
-}
-
-function routedCount(results: ReturnType<typeof planBundleGridRoutesV3WithSplices>['results']): number {
-  return [...results.values()].filter((result) => result.status === 'ROUTED').length;
-}
-
-function incompleteBundles(
-  fixture: ReturnType<typeof createVehicleSpliceStressRoutingFixture>,
-  results: ReturnType<typeof planBundleGridRoutesV3WithSplices>['results'],
-) {
-  return fixture.bundles.flatMap((bundle) => {
-    const bundleRouted = bundle.requests.filter((request) => results.get(request.id)?.status === 'ROUTED').length;
-    return bundleRouted === bundle.requests.length ? [] : [{
-      pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
-      routed: bundleRouted,
-      size: bundle.requests.length,
-    }];
-  });
 }
 
 describe('vehicle perimeter splice stress fixture', () => {
@@ -164,7 +102,7 @@ describe('vehicle perimeter splice stress fixture', () => {
     const started = Date.now();
     const plan = planBundleGridRoutesV3WithSplices(fixture.requests, fixture.obstacles, fixture.displayIds);
     const elapsedMs = Date.now() - started;
-    const routed = routedCount(plan.results);
+    const routed = [...plan.results.values()].filter((result) => result.status === 'ROUTED').length;
     console.info(`[vehicle-routing-v3 splices] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} bundles=${fixture.bundles.length}`);
 
     expect(plan.results.size).toBe(fixture.requests.length);
@@ -192,29 +130,5 @@ describe('vehicle perimeter splice stress fixture', () => {
     writeFileSync('artifacts/router-v3/vehicle-splices-40.svg', svg, 'utf8');
     expect(svg).toContain('S40 · 5W');
     expect(svg).toContain('generated from router data');
-  }, 30000);
-
-  it('measures whether the four-grid connector fanout is the dominant routing blocker', () => {
-    const fixture = createVehicleSpliceStressRoutingFixture();
-    const oneGridRequests = withConnectorExitGrids(fixture.requests, 1);
-    const started = Date.now();
-    const plan = planBundleGridRoutesV3WithSplices(oneGridRequests, fixture.obstacles, fixture.displayIds);
-    const elapsedMs = Date.now() - started;
-    const routed = routedCount(plan.results);
-    console.info(`[vehicle-routing-v3 connector-fanout-1G] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs}`);
-    console.info(`[vehicle-routing-v3 connector-fanout-1G incomplete] ${JSON.stringify(incompleteBundles(fixture, plan.results))}`);
-    expect(plan.results.size).toBe(fixture.requests.length);
-  }, 30000);
-
-  it('measures bundle-staggered connector fanout without shortening label clearance', () => {
-    const fixture = createVehicleSpliceStressRoutingFixture();
-    const staggeredRequests = withStaggeredConnectorBundleExits(fixture.requests);
-    const started = Date.now();
-    const plan = planBundleGridRoutesV3WithSplices(staggeredRequests, fixture.obstacles, fixture.displayIds);
-    const elapsedMs = Date.now() - started;
-    const routed = routedCount(plan.results);
-    console.info(`[vehicle-routing-v3 connector-fanout-staggered] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs}`);
-    console.info(`[vehicle-routing-v3 connector-fanout-staggered incomplete] ${JSON.stringify(incompleteBundles(fixture, plan.results))}`);
-    expect(plan.results.size).toBe(fixture.requests.length);
   }, 30000);
 });
