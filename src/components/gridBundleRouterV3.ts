@@ -21,6 +21,7 @@ const TURN_COST = 5;
 const CROSSING_COST = 4;
 const CORRIDOR_MIN_RUN = 1;
 const RIPUP_BLOCKER_LIMIT = 12;
+const RIPUP_EVALUATION_LIMIT = 1;
 
 type Direction = 'left' | 'right' | 'up' | 'down';
 type Orientation = 'h' | 'v';
@@ -385,6 +386,12 @@ function withoutBundle(reservation: Reservation, bundleKey: string): Reservation
   const edges = new Map([...reservation.edges].filter(([, edge]) => edge.bundleKey !== bundleKey));
   return { edges, nodes: rebuildNodeUsage(edges) };
 }
+function cloneReservation(reservation: Reservation): Reservation {
+  return {
+    edges: new Map(reservation.edges),
+    nodes: new Map([...reservation.nodes].map(([key, usage]) => [key, { ...usage }])),
+  };
+}
 function projection(p: Node, normal: Node) { return p.gx * normal.gx + p.gy * normal.gy; }
 
 function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation): Map<string, OrthogonalRouteResult> | null {
@@ -473,63 +480,84 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
   }
   return out;
 }
+function completeFallback(
+  baseReservation: Reservation,
+  baseResults: Map<string, OrthogonalRouteResult>,
+  bundles: RouteBundle[],
+  frame: Frame,
+  blocked: Set<string>,
+) {
+  const reservation = cloneReservation(baseReservation);
+  const results = new Map(baseResults);
+  for (const bundle of bundles) {
+    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
+  }
+  const routed = [...results.values()].filter((result) => result.status === 'ROUTED').length;
+  return { reservation, results, routed };
+}
 
 export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: RouteObstacle[] = [], displayIds: ElementDisplayIds = {}): BundleGridPlanV3 {
   const frame = inferFrame(requests, obstacles);
   const blocked = buildBlockedEdges(frame, obstacles);
   protectTerminalPortals(frame, requests, blocked);
-  let reservation: Reservation = { edges: new Map(), nodes: new Map() };
-  const results = new Map<string, OrthogonalRouteResult>();
+  const phase1Reservation: Reservation = { edges: new Map(), nodes: new Map() };
+  const phase1Results = new Map<string, OrthogonalRouteResult>();
   const bundleOrder = buildRouteBundles(requests, displayIds);
   const pending: RouteBundle[] = [];
   const committed: RouteBundle[] = [];
   let corridorBundles = 0;
-  let ripupRepairs = 0;
 
   // Phase 1: reserve only complete physical bundles. A bundle that cannot be
   // placed atomically is not allowed to fragment the grid with partial wires
   // before lower-priority bundles get their own corridor chance.
   for (const bundle of bundleOrder) {
-    const corridor = tryCorridor(bundle, frame, blocked, reservation);
+    const corridor = tryCorridor(bundle, frame, blocked, phase1Reservation);
     if (!corridor) { pending.push(bundle); continue; }
     corridorBundles += 1;
     committed.push(bundle);
-    for (const [id, result] of corridor) results.set(id, result);
+    for (const [id, result] of corridor) phase1Results.set(id, result);
   }
 
-  // Phase 1b: bounded bundle-level rip-up. A pending bundle may force one
-  // already-routed bundle onto an alternative corridor, but the swap is only
-  // accepted if both bundles remain atomically routed afterwards. Thus a lower
-  // priority bundle never sacrifices a previously routed higher-priority one.
-  const unresolved: RouteBundle[] = [];
-  for (const bundle of pending) {
-    if (bundle.requests.length < 2) { unresolved.push(bundle); continue; }
-    let repaired = false;
+  // Baseline is always retained. Repair candidates are allowed to replace it
+  // only when the completed 180-wire solution routes strictly more wires.
+  let best = completeFallback(phase1Reservation, phase1Results, pending, frame, blocked);
+  let bestCorridorBundles = corridorBundles;
+  let bestFallbackBundles = pending.length;
+  let ripupRepairs = 0;
+  let evaluations = 0;
+
+  outer: for (const bundle of pending) {
+    if (bundle.requests.length < 2) continue;
     const blockerCandidates = committed.slice().reverse().slice(0, RIPUP_BLOCKER_LIMIT);
     for (const blocker of blockerCandidates) {
-      const trial = withoutBundle(reservation, blocker.key);
-      const incoming = tryCorridor(bundle, frame, blocked, trial);
+      const trialReservation = withoutBundle(phase1Reservation, blocker.key);
+      const incoming = tryCorridor(bundle, frame, blocked, trialReservation);
       if (!incoming) continue;
-      const reroutedBlocker = tryCorridor(blocker, frame, blocked, trial);
+      const reroutedBlocker = tryCorridor(blocker, frame, blocked, trialReservation);
       if (!reroutedBlocker) continue;
 
-      reservation = trial;
-      for (const [id, result] of incoming) results.set(id, result);
-      for (const [id, result] of reroutedBlocker) results.set(id, result);
-      committed.push(bundle);
-      corridorBundles += 1;
-      ripupRepairs += 1;
-      repaired = true;
-      break;
+      const trialResults = new Map(phase1Results);
+      for (const [id, result] of incoming) trialResults.set(id, result);
+      for (const [id, result] of reroutedBlocker) trialResults.set(id, result);
+      const remaining = pending.filter((candidate) => candidate.key !== bundle.key);
+      const completed = completeFallback(trialReservation, trialResults, remaining, frame, blocked);
+      evaluations += 1;
+
+      if (completed.routed > best.routed) {
+        best = completed;
+        bestCorridorBundles = corridorBundles + 1;
+        bestFallbackBundles = remaining.length;
+        ripupRepairs = 1;
+      }
+      if (evaluations >= RIPUP_EVALUATION_LIMIT) break outer;
     }
-    if (!repaired) unresolved.push(bundle);
   }
 
-  // Phase 2: only after corridor planning/repair is complete do unresolved
-  // bundles fall back to per-wire routing through the remaining capacity.
-  for (const bundle of unresolved) {
-    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
-  }
-
-  return { results, bundleOrder, corridorBundles, fallbackBundles: unresolved.length, ripupRepairs };
+  return {
+    results: best.results,
+    bundleOrder,
+    corridorBundles: bestCorridorBundles,
+    fallbackBundles: bestFallbackBundles,
+    ripupRepairs,
+  };
 }
