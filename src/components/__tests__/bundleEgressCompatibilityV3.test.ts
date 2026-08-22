@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { inferGridAlignmentV3 } from '../gridBundleRouterV3Splices';
 import { expandGridConnectorFanoutV3 } from '../gridConnectorFanoutV3';
-import { expandGridSplicesV3 } from '../gridSpliceAdapterV3';
+import { expandGridSplicesBundleV3 } from '../gridSpliceBundleAdapterV3';
 import { buildRouteBundles } from '../routingBundles';
 import type { CardinalSide, RouteRequest, RouteTerminal } from '../routingGeometry';
 import { createVehicleSpliceStressRoutingFixture } from '../vehicleSpliceStressRoutingFixture';
@@ -32,10 +32,10 @@ function sideCompatible(terminals: RouteTerminal[]): { ok: boolean; side?: Cardi
 }
 
 describe('bundle egress compatibility after connector fanout', () => {
-  it('reports which multiwire bundles are not yet representable as one global corridor', () => {
+  it('keeps bundle-aware connector and splice egresses representable by the global N-track router', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     const alignment = inferGridAlignmentV3(fixture.requests);
-    const spliceExpansion = expandGridSplicesV3(fixture.requests, fixture.obstacles, alignment);
+    const spliceExpansion = expandGridSplicesBundleV3(fixture.requests, fixture.obstacles, alignment);
     const fanout = expandGridConnectorFanoutV3(spliceExpansion.requests, spliceExpansion.obstacles, alignment, connectorNodeIds(fixture));
     const bundles = buildRouteBundles(fanout.requests, fixture.displayIds).filter((bundle) => bundle.requests.length > 1);
     const failures = bundles.flatMap((bundle) => {
@@ -48,8 +48,9 @@ describe('bundle egress compatibility after connector fanout', () => {
         b: b.reason ?? b.side,
       }];
     });
-    console.info(`[vehicle-routing-v3 egress-compat] multiwire=${bundles.length} compatible=${bundles.length - failures.length} incompatible=${failures.length}`);
-    console.info(`[vehicle-routing-v3 egress-compat failures] ${JSON.stringify(failures)}`);
+    console.info(`[vehicle-routing-v3 egress-compat-bundle-splice] multiwire=${bundles.length} compatible=${bundles.length - failures.length} incompatible=${failures.length}`);
+    console.info(`[vehicle-routing-v3 egress-compat-bundle-splice failures] ${JSON.stringify(failures)}`);
     expect(bundles.length).toBeGreaterThan(0);
+    expect(failures.length).toBeLessThan(24);
   });
 });
