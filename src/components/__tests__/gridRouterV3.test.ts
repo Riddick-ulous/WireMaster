@@ -33,4 +33,20 @@ describe('grid bundle router V3 spike', () => {
     expect(routed(c12)).toBe(10);
     expect(routed(c13)).toBeGreaterThan(0);
   }, 3000);
+
+  it('classifies bundles that are intrinsically corridor-routable before global reservations', () => {
+    const fixture = withBundleCavityPermutation(createVehicleStressRoutingFixture());
+    const isolated = fixture.bundles.map((bundle) => {
+      const plan = planBundleGridRoutesV3(bundle.requests, fixture.obstacles, fixture.displayIds);
+      const routed = bundle.requests.filter((request) => plan.results.get(request.id)?.status === 'ROUTED').length;
+      return {
+        pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
+        size: bundle.requests.length,
+        routed,
+        corridor: plan.corridorBundles === 1,
+      };
+    });
+    console.info(`[vehicle-routing-v3 isolated-bundles] ${JSON.stringify(isolated)}`);
+    expect(isolated.filter((item) => item.routed === item.size).length).toBeGreaterThan(0);
+  }, 5000);
 });
