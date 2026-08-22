@@ -19,6 +19,7 @@ const EPS = 0.25;
 const FRAME_MARGIN = 18;
 const TURN_COST = 5;
 const CROSSING_COST = 16;
+const CORRIDOR_MIN_RUN = 1;
 
 type Direction = 'left' | 'right' | 'up' | 'down';
 type Orientation = 'h' | 'v';
@@ -205,13 +206,13 @@ function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direc
   while (open.size) {
     const item = open.pop()!; if (item.g > (score.get(item.key) ?? Infinity) + EPS) continue;
     const current = item.state;
-    if (current.gx === target.gx && current.gy === target.gy && current.dir === targetDir && current.run >= width) return reconstruct(came, states, item.key);
+    if (current.gx === target.gx && current.gy === target.gy && current.dir === targetDir && current.run >= CORRIDOR_MIN_RUN) return reconstruct(came, states, item.key);
     for (const dir of ['left', 'right', 'up', 'down'] as Direction[]) {
       if (dir === opposite(current.dir)) continue;
-      const turning = dir !== current.dir; if (turning && current.run < width) continue;
+      const turning = dir !== current.dir; if (turning && current.run < CORRIDOR_MIN_RUN) continue;
       const next = add(current, vec(dir)); if (!inBounds(next, bounds)) continue;
       if (!corridorFootprintClear(current, next, dir, width, blocked, reservation)) continue;
-      const run = turning ? 1 : Math.min(width, current.run + 1);
+      const run = turning ? 1 : Math.min(CORRIDOR_MIN_RUN, current.run + 1);
       const nextState: State = { ...next, dir, run, crossingStraight: false }; const key = stateKey(nextState);
       const g = item.g + 1 + (turning ? TURN_COST : 0); if (g + EPS >= (score.get(key) ?? Infinity)) continue;
       score.set(key, g); came.set(key, item.key); states.set(key, nextState);
