@@ -15,6 +15,10 @@ function numericCompare(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+function requestOrderKey(request: RouteRequest): string {
+  return request.displayId ?? request.id;
+}
+
 function displayId(nodeId: string, displayIds: ElementDisplayIds): string {
   return displayIds[nodeId] ?? nodeId;
 }
@@ -43,7 +47,7 @@ export function buildRouteBundles(requests: RouteRequest[], displayIds: ElementD
   }
 
   for (const bundle of grouped.values()) {
-    bundle.requests.sort((left, right) => numericCompare(left.id, right.id));
+    bundle.requests.sort((left, right) => numericCompare(requestOrderKey(left), requestOrderKey(right)) || numericCompare(left.id, right.id));
   }
 
   return [...grouped.values()].sort((left, right) => {
@@ -83,6 +87,7 @@ export function bundleEndpointOrder(bundle: RouteBundle, elementId: string): str
   return terminals
     .slice()
     .sort((left, right) => representativeCoordinate(left.terminal, axis) - representativeCoordinate(right.terminal, axis)
+      || numericCompare(requestOrderKey(left.request), requestOrderKey(right.request))
       || numericCompare(left.request.id, right.request.id))
     .map((item) => item.request.id);
 }

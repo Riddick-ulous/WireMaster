@@ -248,3 +248,8 @@ Current deterministic 40-splice checkpoint:
 - tolerant router + connector fanout + bundle-aware splice egresses: `145/180` (rejected as main path),
 - pure-bundle router + connector fanout: `114/180` (retained experiment),
 - transformed endpoint-pair groups routable in isolation: `73/73`.
+
+The tolerant candidate is the active Electrical Viewer route planner. The
+viewer derives bundle-grouped connector slots locally, keeps physical pin IDs
+as handle identities, and exposes the 30-connector / 180-wire perimeter harness
+as `Router Demo (30C)` for manual regression testing.

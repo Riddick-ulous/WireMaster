@@ -4,7 +4,7 @@ import type { CardinalSide, RoutePoint } from './routingGeometry';
 export const PIN_PITCH_PX = 28;
 export const CONNECTOR_WIDTH_PX = 180;
 export const CONNECTOR_TITLE_PX = 31;
-export const HORIZONTAL_PIN_WIDTH_PX = 32;
+export const HORIZONTAL_PIN_WIDTH_PX = 28;
 export const HORIZONTAL_PIN_HEIGHT_PX = 92;
 export const SPLICE_SIZE_PX = 12;
 
@@ -43,12 +43,23 @@ export function connectorNearSplicePosition(
   connector: ConnectorInstance | undefined,
   connectorPosition: RoutePoint,
   rotation: ViewerRotation,
+  visualSlot?: number,
+  connectorSize?: { width: number; height: number },
 ): ConnectorNearSplicePlacement {
   const pinIndex = Math.max(0, connector?.pins.findIndex((pin) => pin.id === splice.anchorPinId) ?? 0);
-  const staggerLane: 0 | 1 = pinIndex % 2 === 0 ? 0 : 1;
+  const slot = visualSlot ?? pinIndex;
+  const staggerLane: 0 | 1 = slot % 2 === 0 ? 0 : 1;
   const radialGap = CONNECTOR_SPLICE_BASE_GAP_PX + staggerLane * CONNECTOR_SPLICE_STAGGER_PX;
-  const pinCenterY = connectorPosition.y + CONNECTOR_TITLE_PX + pinIndex * PIN_PITCH_PX + PIN_PITCH_PX / 2;
-  const pinCenterX = connectorPosition.x + pinIndex * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2;
+  const pinCenterY = connectorPosition.y + CONNECTOR_TITLE_PX + slot * PIN_PITCH_PX + PIN_PITCH_PX / 2;
+  const pinCenterX = connectorPosition.x + slot * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2;
+  const size = connectorSize ?? {
+    width: rotation === 90 || rotation === 270
+      ? Math.max(CONNECTOR_WIDTH_PX, (connector?.pins.length ?? 0) * HORIZONTAL_PIN_WIDTH_PX)
+      : CONNECTOR_WIDTH_PX,
+    height: rotation === 90 || rotation === 270
+      ? CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX
+      : CONNECTOR_TITLE_PX + (connector?.pins.length ?? 0) * PIN_PITCH_PX,
+  };
 
   if (rotation === 180) {
     return {
@@ -58,7 +69,7 @@ export function connectorNearSplicePosition(
   }
   if (rotation === 90) {
     return {
-      position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y + CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX + radialGap },
+      position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y + size.height + radialGap },
       labelSide: 'top', radialGap, staggerLane,
     };
   }
@@ -69,7 +80,7 @@ export function connectorNearSplicePosition(
     };
   }
   return {
-    position: { x: connectorPosition.x + CONNECTOR_WIDTH_PX + radialGap, y: pinCenterY - SPLICE_SIZE_PX / 2 },
+    position: { x: connectorPosition.x + size.width + radialGap, y: pinCenterY - SPLICE_SIZE_PX / 2 },
     labelSide: 'left', radialGap, staggerLane,
   };
 }

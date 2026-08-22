@@ -148,10 +148,12 @@ export function createVehicleWireAssignments(): VehicleWireAssignment[] {
   return assignments;
 }
 
-export function createVehicleStressDemoProject(): Project {
+export function createVehicleStressDemoProject(
+  connectorSpecs: VehicleConnectorSpec[] = VEHICLE_CONNECTOR_SPECS,
+): Project {
   const wireClassId = 'vehicle-wire-class';
   const netClassId = 'vehicle-signal-net-class';
-  const connectors = VEHICLE_CONNECTOR_SPECS.map(makeConnector);
+  const connectors = connectorSpecs.map(makeConnector);
   const byId = new Map(connectors.map((connector) => [connector.id, connector]));
   const nets: Net[] = [];
 
@@ -180,8 +182,8 @@ export function createVehicleStressDemoProject(): Project {
       splices: [],
       wires: [],
       viewerLayout: {
-        connectorPositions: Object.fromEntries(VEHICLE_CONNECTOR_SPECS.map((spec) => [connectorId(spec.displayId), { x: spec.gridX * VEHICLE_GRID_PX, y: spec.gridY * VEHICLE_GRID_PX }])),
-        connectorRotations: Object.fromEntries(VEHICLE_CONNECTOR_SPECS.map((spec) => [connectorId(spec.displayId), spec.rotation])),
+        connectorPositions: Object.fromEntries(connectorSpecs.map((spec) => [connectorId(spec.displayId), { x: spec.gridX * VEHICLE_GRID_PX, y: spec.gridY * VEHICLE_GRID_PX }])),
+        connectorRotations: Object.fromEntries(connectorSpecs.map((spec) => [connectorId(spec.displayId), spec.rotation])),
         splicePositions: {},
       },
     }],

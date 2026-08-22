@@ -12,6 +12,8 @@ export interface RouteTerminal {
 }
 export interface RouteRequest {
   id: string;
+  /** Stable human-facing wire order used only as a deterministic tie-breaker. */
+  displayId?: string;
   source: RouteTerminal;
   target: RouteTerminal;
   sourceMinStraight?: number;

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createVehicleStressDemoProject, createVehicleWireAssignments, VEHICLE_BUNDLE_SPECS, VEHICLE_CONNECTOR_SPECS } from '../../core/vehicleStressDemo';
 import { buildRouteBundles, bundleEndpointOrder, permutationInversions } from '../routingBundles';
+import { VEHICLE_PERIMETER_CONNECTOR_SPECS } from '../vehiclePerimeterStressLayout';
 import { createVehicleStressRoutingFixture } from '../vehicleStressRoutingFixture';
+import { buildViewerConnectorLayoutsV3 } from '../viewerConnectorLayoutV3';
 
 const CAPTURED_V2_BASELINE = {
   connectors: 30,
@@ -33,6 +35,30 @@ describe('vehicle subharness stress fixture', () => {
     expect(Math.min(...bundleSizes)).toBe(1);
     expect(Math.max(...bundleSizes)).toBe(10);
     expect(VEHICLE_CONNECTOR_SPECS.every((spec) => Number.isInteger(spec.gridX) && Number.isInteger(spec.gridY))).toBe(true);
+  });
+
+  it('exposes the perimeter stress project through the same viewer-only bundle layout used by routing', () => {
+    const project = createVehicleStressDemoProject(VEHICLE_PERIMETER_CONNECTOR_SPECS);
+    const harness = project.subHarnesses[0];
+    const layouts = buildViewerConnectorLayoutsV3({
+      connectors: harness.connectors,
+      splices: harness.splices,
+      wires: harness.wires,
+      connectorPositions: harness.viewerLayout.connectorPositions,
+      connectorRotations: harness.viewerLayout.connectorRotations,
+      splicePositions: harness.viewerLayout.splicePositions,
+    });
+    const fixture = createVehicleStressRoutingFixture();
+
+    expect(harness.connectors).toHaveLength(30);
+    expect(harness.wires.filter((wire) => wire.status === 'ACTIVE')).toHaveLength(180);
+    for (const connector of harness.connectors) {
+      const actual = layouts[connector.id];
+      const expected = fixture.connectorLayouts[connector.id];
+      expect(actual.totalSlots).toBe(expected.totalSlots);
+      expect([...actual.slotByCavityIndex.entries()]).toEqual([...expected.slotByCavityIndex.entries()]);
+      expect(new Set(actual.slotByCavityIndex.values()).size).toBe(connector.pins.length);
+    }
   });
 
   it('groups by physical endpoint pair, routes largest bundle first and uses numeric connector IDs for ties', () => {
