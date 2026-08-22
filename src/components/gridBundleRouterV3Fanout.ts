@@ -26,12 +26,13 @@ export function planBundleGridRoutesV3FanoutAtomicWithSplices(
   connectorNodeIds: ReadonlySet<string> = new Set(),
 ): FanoutBundlePlanV3 {
   const alignment = inferGridAlignmentV3(requests);
-  const spliceExpansion = expandGridSplicesBundleV3(requests, obstacles, alignment);
+  const spliceExpansion = expandGridSplicesBundleV3(requests, obstacles, alignment, displayIds);
   const fanoutExpansion = expandGridConnectorFanoutV3(
     spliceExpansion.requests,
     spliceExpansion.obstacles,
     alignment,
     connectorNodeIds,
+    displayIds,
   );
   const plan = planGlobalBundleGridRoutesV3(fanoutExpansion.requests, fanoutExpansion.obstacles, displayIds);
   const withConnectorFanout = finalizeGridConnectorFanoutRoutesV3(plan.results, fanoutExpansion.geometries);
