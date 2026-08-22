@@ -20,6 +20,9 @@ const FRAME_MARGIN = 18;
 const TURN_COST = 5;
 const CROSSING_COST = 4;
 const CORRIDOR_MIN_RUN = 1;
+const BEAM_WIDTH = 4;
+const BEAM_DEPTH = 14;
+const CORRIDOR_VARIANTS = 3;
 
 type Direction = 'left' | 'right' | 'up' | 'down';
 type Orientation = 'h' | 'v';
@@ -35,6 +38,12 @@ interface State extends Node { dir: Direction; run: number; crossingStraight: bo
 interface QueueItem { key: string; state: State; g: number; f: number }
 interface Passage { blocked: boolean; crossing: boolean }
 interface CorridorStep { blocked: boolean; crossingAtStart: boolean; crossingAtEnd: boolean; crossings: number }
+interface BeamState {
+  reservation: Reservation;
+  results: Map<string, OrthogonalRouteResult>;
+  pending: RouteBundle[];
+  corridorBundles: number;
+}
 
 export interface BundleGridPlanV3 {
   results: Map<string, OrthogonalRouteResult>;
@@ -74,6 +83,11 @@ function nodeKey(node: Node) { return `${node.gx},${node.gy}`; }
 function edgeKey(a: Node, b: Node) { return a.gx === b.gx ? `v:${a.gx}:${Math.min(a.gy, b.gy)}` : `h:${Math.min(a.gx, b.gx)}:${a.gy}`; }
 function edgeOrient(a: Node, b: Node): Orientation { return a.gx === b.gx ? 'v' : 'h'; }
 function stateKey(state: State) { return `${state.gx},${state.gy},${state.dir},${state.run},${state.crossingStraight ? 1 : 0}`; }
+function directionOrder(variant: number): Direction[] {
+  if (variant % CORRIDOR_VARIANTS === 1) return ['up', 'down', 'left', 'right'];
+  if (variant % CORRIDOR_VARIANTS === 2) return ['right', 'left', 'down', 'up'];
+  return ['left', 'right', 'up', 'down'];
+}
 
 function inferFrame(requests: RouteRequest[], obstacles: RouteObstacle[]): Frame {
   const options = requests.flatMap((request) => [...request.source.options, ...request.target.options]);
@@ -254,7 +268,7 @@ function corridorFootprintStep(
   return { blocked: false, crossingAtStart, crossingAtEnd, crossings };
 }
 
-function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direction, targetDir: Direction, width: number, blocked: Set<string>, reservation: Reservation): Node[] | null {
+function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direction, targetDir: Direction, width: number, blocked: Set<string>, reservation: Reservation, variant = 0): Node[] | null {
   const open = new Heap(); const score = new Map<string, number>(); const came = new Map<string, string>(); const states = new Map<string, State>();
   const initial: State = { ...start, dir: startDir, run: 0, crossingStraight: false };
   const initialKey = stateKey(initial); score.set(initialKey, 0); states.set(initialKey, initial);
@@ -264,7 +278,7 @@ function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direc
     const item = open.pop()!; if (item.g > (score.get(item.key) ?? Infinity) + EPS) continue;
     const current = item.state;
     if (current.gx === target.gx && current.gy === target.gy && current.dir === targetDir && current.run >= CORRIDOR_MIN_RUN && !current.crossingStraight) return reconstruct(came, states, item.key);
-    for (const dir of ['left', 'right', 'up', 'down'] as Direction[]) {
+    for (const dir of directionOrder(variant)) {
       if (dir === opposite(current.dir) || (current.crossingStraight && dir !== current.dir)) continue;
       const turning = dir !== current.dir; if (turning && current.run < CORRIDOR_MIN_RUN) continue;
       const next = add(current, vec(dir)); if (!inBounds(next, bounds)) continue;
@@ -346,9 +360,15 @@ function reserve(points: Node[], reservation: Reservation, wireId: string, bundl
     reservation.nodes.set(nodeKey(nodes[i]), usage);
   }
 }
+function cloneReservation(reservation: Reservation): Reservation {
+  return {
+    edges: new Map(reservation.edges),
+    nodes: new Map([...reservation.nodes].map(([key, usage]) => [key, { ...usage }])),
+  };
+}
 function projection(p: Node, normal: Node) { return p.gx * normal.gx + p.gy * normal.gy; }
 
-function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation): Map<string, OrthogonalRouteResult> | null {
+function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation, variant = 0): Map<string, OrthogonalRouteResult> | null {
   const width = bundle.requests.length; if (width < 2) return null;
   const raw = bundle.requests.map((request) => ({ request, a: onePortal(frame, request, bundle.elementAId), b: onePortal(frame, request, bundle.elementBId) }));
   if (raw.some((item) => !item.a || !item.b)) return null;
@@ -363,7 +383,7 @@ function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, re
     const sa = add(sourceRef, sourceNormal, i); const tb = add(targetRef, targetNormal, i);
     if (items[i].a.node.gx !== sa.gx || items[i].a.node.gy !== sa.gy || targetSlots[i].node.gx !== tb.gx || targetSlots[i].node.gy !== tb.gy) return null;
   }
-  const spine = searchCorridor(frame, sourceRef, targetRef, startDir, targetDir, width, blocked, reservation); if (!spine) return null;
+  const spine = searchCorridor(frame, sourceRef, targetRef, startDir, targetDir, width, blocked, reservation, variant); if (!spine) return null;
   const tracks = items.map((_, i) => offsetTrack(spine, i));
   const compatibilities = tracks.map((track) => pathCompatibility(track, blocked, reservation));
   if (compatibilities.some((compatibility) => !compatibility.valid)) return null;
@@ -435,6 +455,27 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
   return out;
 }
 
+function finishState(state: BeamState, remaining: RouteBundle[], frame: Frame, blocked: Set<string>): BundleGridPlanV3 {
+  const reservation = cloneReservation(state.reservation);
+  const results = new Map(state.results);
+  const pending = state.pending.slice();
+  let corridorBundles = state.corridorBundles;
+
+  for (const bundle of remaining) {
+    const corridor = tryCorridor(bundle, frame, blocked, reservation);
+    if (!corridor) { pending.push(bundle); continue; }
+    corridorBundles += 1;
+    for (const [id, result] of corridor) results.set(id, result);
+  }
+  for (const bundle of pending) {
+    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
+  }
+  return { results, bundleOrder: [], corridorBundles, fallbackBundles: pending.length };
+}
+function routedCount(plan: BundleGridPlanV3) { return [...plan.results.values()].filter((result) => result.status === 'ROUTED').length; }
+function totalLength(plan: BundleGridPlanV3) { return [...plan.results.values()].reduce((sum, result) => sum + (result.status === 'ROUTED' ? result.length : 0), 0); }
+function stateSignature(state: BeamState) { return [...state.reservation.edges.keys()].sort().join('|'); }
+
 export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: RouteObstacle[] = [], displayIds: ElementDisplayIds = {}): BundleGridPlanV3 {
   const frame = inferFrame(requests, obstacles);
   const blocked = buildBlockedEdges(frame, obstacles);
@@ -444,21 +485,77 @@ export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: Rout
   const pending: RouteBundle[] = [];
   let corridorBundles = 0;
 
-  // Phase 1: reserve only complete physical bundles. A bundle that cannot be
-  // placed atomically is not allowed to fragment the grid with partial wires
-  // before lower-priority bundles get their own corridor chance.
   for (const bundle of bundleOrder) {
     const corridor = tryCorridor(bundle, frame, blocked, reservation);
     if (!corridor) { pending.push(bundle); continue; }
     corridorBundles += 1;
     for (const [id, result] of corridor) results.set(id, result);
   }
-
-  // Phase 2: only after corridor planning is complete do unresolved bundles
-  // fall back to per-wire routing through the remaining capacity/crossings.
   for (const bundle of pending) {
     for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
   }
 
   return { results, bundleOrder, corridorBundles, fallbackBundles: pending.length };
+}
+
+/** Experimental bounded beam used only by the stress test. The normal V3 path
+ * remains greedy/fast until an alternative-corridor strategy proves useful. */
+export function planBundleGridRoutesV3BeamExperiment(requests: RouteRequest[], obstacles: RouteObstacle[] = [], displayIds: ElementDisplayIds = {}): BundleGridPlanV3 {
+  const frame = inferFrame(requests, obstacles);
+  const blocked = buildBlockedEdges(frame, obstacles);
+  protectTerminalPortals(frame, requests, blocked);
+  const bundleOrder = buildRouteBundles(requests, displayIds);
+  const depth = Math.min(BEAM_DEPTH, bundleOrder.length);
+  let beam: BeamState[] = [{ reservation: { edges: new Map(), nodes: new Map() }, results: new Map(), pending: [], corridorBundles: 0 }];
+
+  for (let index = 0; index < depth; index += 1) {
+    const bundle = bundleOrder[index];
+    const next: BeamState[] = [];
+    for (const state of beam) {
+      const candidates: BeamState[] = [];
+      if (bundle.requests.length >= 2) {
+        const seen = new Set<string>();
+        for (let variant = 0; variant < CORRIDOR_VARIANTS; variant += 1) {
+          const reservation = cloneReservation(state.reservation);
+          const corridor = tryCorridor(bundle, frame, blocked, reservation, variant);
+          if (!corridor) continue;
+          const signature = [...reservation.edges]
+            .filter(([, edge]) => edge.bundleKey === bundle.key)
+            .map(([key]) => key)
+            .sort()
+            .join('|');
+          if (seen.has(signature)) continue;
+          seen.add(signature);
+          const results = new Map(state.results);
+          for (const [id, result] of corridor) results.set(id, result);
+          candidates.push({ reservation, results, pending: state.pending.slice(), corridorBundles: state.corridorBundles + 1 });
+        }
+      }
+      if (!candidates.length) {
+        next.push({ ...state, pending: [...state.pending, bundle] });
+      } else {
+        next.push(...candidates);
+      }
+    }
+
+    const unique = new Map<string, BeamState>();
+    for (const state of next) {
+      const signature = stateSignature(state);
+      const existing = unique.get(signature);
+      if (!existing || state.results.size > existing.results.size) unique.set(signature, state);
+    }
+    beam = [...unique.values()]
+      .sort((left, right) => right.results.size - left.results.size
+        || right.corridorBundles - left.corridorBundles
+        || left.reservation.edges.size - right.reservation.edges.size)
+      .slice(0, BEAM_WIDTH);
+  }
+
+  const remaining = bundleOrder.slice(depth);
+  const completed = beam.map((state) => finishState(state, remaining, frame, blocked));
+  completed.sort((left, right) => routedCount(right) - routedCount(left)
+    || right.corridorBundles - left.corridorBundles
+    || totalLength(left) - totalLength(right));
+  const best = completed[0] ?? { results: new Map(), bundleOrder: [], corridorBundles: 0, fallbackBundles: bundleOrder.length };
+  return { ...best, bundleOrder };
 }
