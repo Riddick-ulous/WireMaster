@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVehicleStressDemoProject, VEHICLE_BUNDLE_SPECS, VEHICLE_CONNECTOR_SPECS } from '../../core/vehicleStressDemo';
+import { createVehicleStressDemoProject, createVehicleWireAssignments, VEHICLE_BUNDLE_SPECS, VEHICLE_CONNECTOR_SPECS } from '../../core/vehicleStressDemo';
 import { buildRouteBundles, bundleEndpointOrder, permutationInversions } from '../routingBundles';
 import { createVehicleStressRoutingFixture } from '../vehicleStressRoutingFixture';
 
@@ -56,7 +56,32 @@ describe('vehicle subharness stress fixture', () => {
     }));
   });
 
-  it('exposes endpoint cavity ordering as layout input without changing wire identity', () => {
+  it('places bundle cavities into contiguous viewer blocks without changing electrical cavity identity', () => {
+    const fixture = createVehicleStressRoutingFixture();
+    const assignments = createVehicleWireAssignments();
+    const c1Layout = fixture.connectorLayouts['vehicle-c1'];
+    const c1Groups = c1Layout.groups.map((group) => ({ remote: group.remoteElementDisplayId, size: group.wireIds.length }));
+
+    expect(c1Groups.slice(0, 4)).toEqual([
+      { remote: 'C2', size: 10 },
+      { remote: 'C3', size: 8 },
+      { remote: 'C11', size: 6 },
+      { remote: 'C29', size: 4 },
+    ]);
+    for (const group of c1Layout.groups) {
+      expect(group.endSlot - group.startSlot + 1).toBe(group.wireIds.length);
+    }
+
+    for (const assignment of assignments) {
+      const request = fixture.requests.find((candidate) => candidate.id === assignment.id)!;
+      const sourceKey = request.source.options[0].key;
+      const targetKey = request.target.options[0].key;
+      expect(sourceKey).toContain(`-p${assignment.aPinIndex + 1}-`);
+      expect(targetKey).toContain(`-p${assignment.bPinIndex + 1}-`);
+    }
+  });
+
+  it('uses the same visual wire order at both ends of the largest bundle after connector grouping', () => {
     const fixture = createVehicleStressRoutingFixture();
     const crossingPressure = fixture.bundles.find((bundle) => bundle.elementADisplayId === 'C1' && bundle.elementBDisplayId === 'C2')!;
     const orderA = bundleEndpointOrder(crossingPressure, crossingPressure.elementAId);
@@ -65,8 +90,7 @@ describe('vehicle subharness stress fixture', () => {
     expect(orderA).toHaveLength(10);
     expect(orderB).toHaveLength(10);
     expect(new Set(orderA)).toEqual(new Set(orderB));
-    // C2 is rotated 180° in the fixture, deliberately creating a permutation problem.
-    expect(permutationInversions(orderA, orderB)).toBeGreaterThan(0);
+    expect(permutationInversions(orderA, orderB)).toBe(0);
   });
 
   it('keeps the measured V2 baseline visible as the V3 comparison point', () => {
