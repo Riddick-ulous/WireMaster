@@ -61,7 +61,9 @@ describe('router V3 data diagnostics', () => {
     console.info(`[vehicle-routing-v3 diagnostic-incomplete] ${JSON.stringify(summary)}`);
     expect(fullSvg).toContain('generated from router data');
     expect(incomplete.length).toBeGreaterThan(0);
-    expect(summary.some((item) => item.isolated < item.size)).toBe(true);
-    expect(summary.some((item) => item.isolated === item.size && item.global < item.size)).toBe(true);
+    // The perimeter fixture is now geometrically feasible bundle-by-bundle.
+    // Any remaining failures must therefore be global reservation/order conflicts.
+    expect(summary.every((item) => item.isolated === item.size)).toBe(true);
+    expect(summary.every((item) => item.global < item.size)).toBe(true);
   }, 10000);
 });
