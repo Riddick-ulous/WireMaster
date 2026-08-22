@@ -60,7 +60,11 @@ export const VEHICLE_CONNECTOR_SPECS: VehicleConnectorSpec[] = [
   { displayId: 'C28', label: 'Tail Lamp Right', pinCount: 6, gridX: 64, gridY: 108, rotation: 180 },
   { displayId: 'C29', label: 'Logger / Telemetry', pinCount: 20, gridX: 30, gridY: 4, rotation: 0 },
   { displayId: 'C30', label: 'Diagnostics / Service', pinCount: 12, gridX: 34, gridY: 20, rotation: 180 },
-].map((spec): VehicleConnectorSpec => ({ ...spec, gridX: spec.displayId === 'C30' ? 84 : spec.gridX * 2 }));
+].map((spec): VehicleConnectorSpec => ({
+  ...spec,
+  gridX: spec.displayId === 'C30' ? 84 : spec.gridX * 2,
+  rotation: spec.rotation as ViewerRotation,
+}));
 
 /**
  * 50 physical endpoint-pair groups, 180 wires total. The size distribution is
