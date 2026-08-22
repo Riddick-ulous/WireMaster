@@ -1,7 +1,8 @@
 # WireMaster – Project Context
 
 ## Current stage
-M0.2 splices + deeper reconciliation — **in progress** on `m0.2-splices-reconciliation`.
+M0.2 splices + deeper reconciliation is based on `m0.2-splices-reconciliation`.
+The electrical-viewer grid-router rework is **in progress** on `m0.2-grid-router-rework`.
 
 M0.1 was merged to `main` as PR #1 at commit `e1a297210d8542be2f80c53cccb4264a31785175` and is frozen except for regressions discovered by later work.
 
@@ -104,6 +105,26 @@ CI remains:
 - TypeScript + Vite production build
 - Tauri release build (`--no-bundle`) on Linux
 - Tauri release build on Windows
+
+## Grid-router rework checkpoint (2026-08-22)
+
+Accepted V3 candidate path:
+
+```text
+physical connector terminals + physical splice terminals
+-> bundle-aware contiguous splice egresses on one 28 px grid phase
+-> tolerant bundle-first 160/180 global router
+-> splice finalization
+```
+
+- bundles are a global routing preference, not a mandatory full-route N-track strip;
+- the global router may route bundle members independently when an atomic corridor does not fit;
+- `gridGlobalBundleRouterV3` remains a named pure-bundle experiment, not the candidate main path;
+- connector fanout, per-cavity turn lanes, endpoint/viewer-slot separation and diagnostic SVGs remain preserved experiments/regressions;
+- all 73/73 transformed endpoint-pair bundle groups remain independently routable;
+- the accepted candidate currently routes 171/180 wires on the deterministic 40-splice fixture;
+- connector fanout plus the tolerant router reached only 145/180 (141/180 with the legacy splice adapter), below the hard 160/180 promotion gate, so connector fanout is not in the candidate main path yet;
+- connector fanout plus the rigid pure-bundle router remains diagnostic-only at 114/180.
 
 ## Later stages
 ```text

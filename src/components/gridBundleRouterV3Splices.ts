@@ -1,5 +1,6 @@
 import { BUNDLE_GRID_SIZE, planBundleGridRoutesV3, planBundleGridRoutesV3BeamExperiment, type BundleGridPlanV3 } from './gridBundleRouterV3';
-import { expandGridSplicesV3, finalizeGridSpliceRoutesV3, type GridAlignmentV3 } from './gridSpliceAdapterV3';
+import { expandGridSplicesBundleV3, finalizeGridSpliceBundleRoutesV3, type BundleSpliceExpansionV3 } from './gridSpliceBundleAdapterV3';
+import type { GridAlignmentV3 } from './gridSpliceAdapterV3';
 import type { ElementDisplayIds } from './routingBundles';
 import type { RouteObstacle, RouteRequest, RouteTerminalOption } from './routingGeometry';
 
@@ -40,12 +41,11 @@ export function inferGridAlignmentV3(requests: RouteRequest[]): GridAlignmentV3 
 
 function finalize(
   plan: BundleGridPlanV3,
-  requests: RouteRequest[],
-  expansion: ReturnType<typeof expandGridSplicesV3>,
+  expansion: BundleSpliceExpansionV3,
 ): BundleGridPlanV3 {
   return {
     ...plan,
-    results: finalizeGridSpliceRoutesV3(plan.results, requests, expansion.geometries),
+    results: finalizeGridSpliceBundleRoutesV3(plan.results, expansion.geometries),
   };
 }
 
@@ -54,9 +54,9 @@ export function planBundleGridRoutesV3WithSplices(
   obstacles: RouteObstacle[] = [],
   displayIds: ElementDisplayIds = {},
 ): BundleGridPlanV3 {
-  const expansion = expandGridSplicesV3(requests, obstacles, inferGridAlignmentV3(requests));
+  const expansion = expandGridSplicesBundleV3(requests, obstacles, inferGridAlignmentV3(requests), displayIds);
   const plan = planBundleGridRoutesV3(expansion.requests, expansion.obstacles, displayIds);
-  return finalize(plan, requests, expansion);
+  return finalize(plan, expansion);
 }
 
 export function planBundleGridRoutesV3BeamWithSplices(
@@ -64,7 +64,7 @@ export function planBundleGridRoutesV3BeamWithSplices(
   obstacles: RouteObstacle[] = [],
   displayIds: ElementDisplayIds = {},
 ): BundleGridPlanV3 {
-  const expansion = expandGridSplicesV3(requests, obstacles, inferGridAlignmentV3(requests));
+  const expansion = expandGridSplicesBundleV3(requests, obstacles, inferGridAlignmentV3(requests), displayIds);
   const plan = planBundleGridRoutesV3BeamExperiment(expansion.requests, expansion.obstacles, displayIds);
-  return finalize(plan, requests, expansion);
+  return finalize(plan, expansion);
 }

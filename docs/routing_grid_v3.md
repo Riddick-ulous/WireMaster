@@ -1,6 +1,6 @@
 # Electrical Viewer Grid Router V3 Contract
 
-Status: router-rework contract on `m0.2-grid-router-rework`. This document refines the M0.2 routing contract without changing electrical/domain semantics.
+Status: router-rework contract on `m0.2-grid-router-rework`. This document refines the M0.2 routing contract without changing electrical/domain semantics. The 2026-08-22 checkpoint uses the tolerant bundle-first router as the candidate main path; the rigid pure-bundle router remains experimental.
 
 ## 1. Purpose
 
@@ -66,7 +66,7 @@ For grid routing, a continuous label rectangle simply blocks every foreign grid 
 
 Connector bodies, splice bodies, splice labels and foreign splice envelopes similarly map to blocked grid nodes/edges.
 
-## 4. Wire bundles are the primary planning unit
+## 4. Wire bundles are the preferred planning unit
 
 Before path planning, all normal wires are grouped by their unordered pair of physical routing elements.
 
@@ -77,7 +77,7 @@ Examples:
 
 Direction does not split a group. `C1 -> C2` and `C2 -> C1` belong to the same bundle.
 
-Electrical identities remain individual `WireInstance`s; a bundle is derived layout state only.
+Electrical identities remain individual `WireInstance`s; a bundle is derived layout state only. Bundle membership influences planning order and cost, but does not impose a permanent full-route band constraint.
 
 ### 4.1 Bundle priority
 
@@ -89,17 +89,17 @@ Bundles are routed in this deterministic order:
 
 Large bundles therefore reserve useful corridors before sparse one- or two-wire connections can fragment them.
 
-### 4.2 Bundle corridor
+### 4.2 Bundle corridor preference
 
-A bundle of `N` wires is planned as a corridor with `N` adjacent unit-capacity tracks where geometry permits.
+A bundle of `N` wires first attempts a corridor with `N` adjacent unit-capacity tracks where geometry permits.
 
-The planner conceptually performs:
+The candidate main planner conceptually performs:
 1. connector / splice endpoint layout,
 2. bundle corridor search,
-3. reservation of the required track strip,
-4. assignment of individual wires to tracks inside that strip.
+3. assignment of individual wires to tracks inside a successful strip,
+4. tolerant individual-wire fallback when the complete strip does not fit.
 
-Individual wires are not expected to discover parallel placement independently.
+The corridor is therefore a preference, not an all-or-nothing global requirement. A bundle may locally widen, cross another group through legal 90-degree crossings, and converge again later. Failed corridor members do not reserve unused parallel tracks. The rigid full-route N-track spine remains available only through `gridGlobalBundleRouterV3` as an experiment.
 
 ## 5. Connector cavity viewer layout and bundle breakout
 
@@ -175,8 +175,10 @@ The base search state is `(gridX, gridY, direction)` so continuing straight, ben
 A* (or an equivalent deterministic shortest-path search) may be used for one bundle corridor.
 
 Routing is two-phase during the initial pass:
-1. every bundle receives an atomic corridor attempt in bundle-priority order; a failed bundle may not reserve only some of its wires,
-2. unresolved bundles are handled only after complete corridor reservations have been attempted.
+1. every multi-wire bundle receives a corridor attempt in bundle-priority order,
+2. unresolved members are routed individually against the shared global reservation after the corridor attempts.
+
+The individual fallback is allowed to produce a partially routed bundle when that increases the globally routed wire count. It must remain deterministic and obey every normal edge-capacity, crossing and keepout rule.
 
 If a later bundle is `UNROUTED`, bounded rip-up / reroute may remove a small number of lower-priority bundles and retry. A lower-priority bundle must never permanently displace a higher-priority larger bundle unless the alternative improves the global number of routed wires without violating hard rules.
 
@@ -206,7 +208,7 @@ The grid router returns explicit wire polylines after bundle corridor and track 
 
 ## 10. Failure behavior
 
-If no legal bundle corridor / track assignment exists, affected wires are `UNROUTED` graphically. Do not connect them with invalid fallback geometry.
+If neither a legal bundle corridor nor a legal individual fallback path exists, affected wires are `UNROUTED` graphically. Do not connect them with invalid fallback geometry.
 
 The existing top-level routing warning remains and lists affected wire IDs / bundle information.
 
@@ -238,3 +240,11 @@ Metrics reported at minimum:
 - deterministic result hash/signature.
 
 The existing 50 × 15 / 375-wire synthetic benchmark remains useful as a raw throughput test; the vehicle fixture is the more representative routability / bundle-planning acceptance case.
+
+Current deterministic 40-splice checkpoint:
+
+- tolerant router + bundle-aware contiguous splice egresses: `171/180` (candidate main path),
+- promotion gate for any connector-fanout composition: at least `160/180`,
+- tolerant router + connector fanout + bundle-aware splice egresses: `145/180` (rejected as main path),
+- pure-bundle router + connector fanout: `114/180` (retained experiment),
+- transformed endpoint-pair groups routable in isolation: `73/73`.

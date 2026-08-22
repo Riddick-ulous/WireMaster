@@ -1,7 +1,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { inferGridAlignmentV3 } from '../gridBundleRouterV3Splices';
-import { planBundleGridRoutesV3FanoutAtomicWithSplices } from '../gridBundleRouterV3Fanout';
+import {
+  planBundleGridRoutesV3FanoutPureBundleExperimentWithSplices,
+  planBundleGridRoutesV3FanoutTolerantExperimentWithSplices,
+} from '../gridBundleRouterV3Fanout';
 import { expandGridConnectorFanoutV3 } from '../gridConnectorFanoutV3';
 import { planGlobalBundleGridRoutesV3 } from '../gridGlobalBundleRouterV3';
 import { expandGridSplicesBundleV3 } from '../gridSpliceBundleAdapterV3';
@@ -18,7 +21,7 @@ function routedCount(results: Map<string, { status: string }>): number {
   return [...results.values()].filter((result) => result.status === 'ROUTED').length;
 }
 
-describe('grid V3 connector fanout + pure bundle global routing', () => {
+describe('grid V3 connector fanout experiment', () => {
   it('gives every active connector cavity endpoint a unique radial turn lane before global routing', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     const connectorIds = connectorNodeIds(fixture);
@@ -78,10 +81,39 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
     expect(failures).toEqual([]);
   }, 60000);
 
-  it('routes the 40-splice harness through connector fanouts with atomic global bundles', () => {
+  it('records the tolerant fanout composition below its 160/180 promotion gate', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     const started = Date.now();
-    const plan = planBundleGridRoutesV3FanoutAtomicWithSplices(
+    const plan = planBundleGridRoutesV3FanoutTolerantExperimentWithSplices(
+      fixture.requests,
+      fixture.obstacles,
+      fixture.displayIds,
+      connectorNodeIds(fixture),
+    );
+    const elapsedMs = Date.now() - started;
+    const routed = routedCount(plan.results);
+
+    console.info(`[vehicle-routing-v3 fanout-tolerant-experiment] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} connectorFanouts=${plan.connectorFanouts} corridorBundles=${plan.corridorBundles} fallbackBundles=${plan.fallbackBundles}`);
+    expect(routed).toBe(145);
+
+    mkdirSync('artifacts/router-v3', { recursive: true });
+    const svg = renderRouterDiagnosticSvg({
+      title: `WireMaster Router V3 · connector fanout + tolerant-router experiment · routed ${routed}/${fixture.requests.length}`,
+      requests: fixture.requests,
+      obstacles: fixture.obstacles,
+      results: plan.results,
+      bundles: fixture.bundles,
+      displayIds: fixture.displayIds,
+      gridSize: 28,
+    });
+    writeFileSync('artifacts/router-v3/vehicle-splices-fanout-tolerant-experiment.svg', svg, 'utf8');
+    expect(svg).toContain('generated from router data');
+  }, 60000);
+
+  it('retains a diagnostic for the non-default pure-bundle composition', () => {
+    const fixture = createVehicleSpliceStressRoutingFixture();
+    const started = Date.now();
+    const plan = planBundleGridRoutesV3FanoutPureBundleExperimentWithSplices(
       fixture.requests,
       fixture.obstacles,
       fixture.displayIds,
@@ -104,7 +136,7 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
         : [{ pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`, size: bundle.requests.length }];
     });
 
-    console.info(`[vehicle-routing-v3 fanout-bundle] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} connectorFanouts=${plan.connectorFanouts} routedBundles=${plan.routedBundles} unroutedBundles=${plan.unroutedBundles} endpointOrderMismatchBundles=${plan.endpointOrderMismatchBundles}`);
+    console.info(`[vehicle-routing-v3 fanout-pure-bundle-experiment] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} connectorFanouts=${plan.connectorFanouts} routedBundles=${plan.routedBundles} unroutedBundles=${plan.unroutedBundles}`);
     console.info(`[vehicle-routing-v3 fanout-bundle unrouted] ${JSON.stringify(unrouted)}`);
 
     expect(plan.results.size).toBe(fixture.requests.length);
@@ -122,7 +154,7 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
 
     mkdirSync('artifacts/router-v3', { recursive: true });
     const svg = renderRouterDiagnosticSvg({
-      title: `WireMaster Router V3 · connector fanout + pure bundle · routed ${routed}/${fixture.requests.length}`,
+      title: `WireMaster Router V3 · connector fanout + pure-bundle experiment · routed ${routed}/${fixture.requests.length}`,
       requests: fixture.requests,
       obstacles: fixture.obstacles,
       results: plan.results,
@@ -130,7 +162,7 @@ describe('grid V3 connector fanout + pure bundle global routing', () => {
       displayIds: fixture.displayIds,
       gridSize: 28,
     });
-    writeFileSync('artifacts/router-v3/vehicle-splices-fanout-bundle.svg', svg, 'utf8');
+    writeFileSync('artifacts/router-v3/vehicle-splices-fanout-pure-bundle-experiment.svg', svg, 'utf8');
     expect(svg).toContain('generated from router data');
   }, 60000);
 });

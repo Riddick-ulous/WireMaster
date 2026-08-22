@@ -106,9 +106,10 @@ describe('vehicle perimeter splice stress fixture', () => {
     console.info(`[vehicle-routing-v3 splices] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} bundles=${fixture.bundles.length}`);
 
     expect(plan.results.size).toBe(fixture.requests.length);
-    // Initial V3 splice-heavy development baseline. Final acceptance remains
-    // 180/180 and will get a tighter performance gate once the global planner
-    // no longer spends most of its time on fallback reservations.
+    // Rework acceptance gate: the tolerant global router plus bundle-aware
+    // splice egresses must never fall below the established 160/180 baseline.
+    // The current deterministic checkpoint routes 171/180; 180/180 remains the
+    // final acceptance target.
     expect(routed).toBeGreaterThanOrEqual(160);
     expect(elapsedMs).toBeLessThan(25000);
     for (const result of plan.results.values()) {
