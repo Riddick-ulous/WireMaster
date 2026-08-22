@@ -58,18 +58,26 @@ function visualGroupKey(bundleIndex: number): string {
   return `${bundle.a}<->${bundle.b}`;
 }
 
+function remoteOrderHint(local: VehicleConnectorSpec, remote: VehicleConnectorSpec): number {
+  return local.rotation === 90 || local.rotation === 270 ? remote.gridX : remote.gridY;
+}
+
 export function buildVehicleConnectorLayouts(assignments: VehicleWireAssignment[]): Record<string, ConnectorVisualLayout> {
   const pinsByConnector = new Map<string, ConnectorLayoutPin[]>();
+  const specsByDisplayId = new Map(VEHICLE_CONNECTOR_SPECS.map((spec) => [spec.displayId, spec]));
   for (const assignment of assignments) {
     const bundleKey = visualGroupKey(assignment.bundleIndex);
     const aDisplayId = displayIdFromNodeId(assignment.aConnectorId);
     const bDisplayId = displayIdFromNodeId(assignment.bConnectorId);
+    const aSpec = specsByDisplayId.get(aDisplayId)!;
+    const bSpec = specsByDisplayId.get(bDisplayId)!;
     const aPins = pinsByConnector.get(assignment.aConnectorId) ?? [];
     aPins.push({
       cavityIndex: assignment.aPinIndex,
       wireId: assignment.id,
       bundleKey,
       remoteElementDisplayId: bDisplayId,
+      remoteOrderHint: remoteOrderHint(aSpec, bSpec),
     });
     pinsByConnector.set(assignment.aConnectorId, aPins);
     const bPins = pinsByConnector.get(assignment.bConnectorId) ?? [];
@@ -78,6 +86,7 @@ export function buildVehicleConnectorLayouts(assignments: VehicleWireAssignment[
       wireId: assignment.id,
       bundleKey,
       remoteElementDisplayId: aDisplayId,
+      remoteOrderHint: remoteOrderHint(bSpec, aSpec),
     });
     pinsByConnector.set(assignment.bConnectorId, bPins);
   }
