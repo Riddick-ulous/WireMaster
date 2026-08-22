@@ -56,13 +56,13 @@ describe('vehicle subharness stress fixture', () => {
     }));
   });
 
-  it('places bundle cavities into contiguous viewer blocks without changing electrical cavity identity', () => {
+  it('places bundle cavities into contiguous movable viewer blocks without changing electrical cavity identity', () => {
     const fixture = createVehicleStressRoutingFixture();
     const assignments = createVehicleWireAssignments();
     const c1Layout = fixture.connectorLayouts['vehicle-c1'];
     const c1Groups = c1Layout.groups.map((group) => ({ remote: group.remoteElementDisplayId, size: group.wireIds.length }));
 
-    expect(c1Groups.slice(0, 4)).toEqual([
+    expect(c1Groups.slice().sort((left, right) => right.size - left.size || left.remote.localeCompare(right.remote, undefined, { numeric: true }))).toEqual([
       { remote: 'C2', size: 10 },
       { remote: 'C3', size: 8 },
       { remote: 'C11', size: 6 },
