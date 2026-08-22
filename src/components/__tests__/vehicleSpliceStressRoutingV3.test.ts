@@ -49,8 +49,56 @@ function withConnectorExitGrids(requests: RouteRequest[], grids: number): RouteR
   }));
 }
 
+function withStaggeredConnectorBundleExits(requests: RouteRequest[]): RouteRequest[] {
+  const remoteIdsByConnector = new Map<string, Set<string>>();
+  for (const request of requests) {
+    if (request.source.nodeId.startsWith('vehicle-c')) {
+      const remotes = remoteIdsByConnector.get(request.source.nodeId) ?? new Set<string>();
+      remotes.add(request.target.nodeId);
+      remoteIdsByConnector.set(request.source.nodeId, remotes);
+    }
+    if (request.target.nodeId.startsWith('vehicle-c')) {
+      const remotes = remoteIdsByConnector.get(request.target.nodeId) ?? new Set<string>();
+      remotes.add(request.source.nodeId);
+      remoteIdsByConnector.set(request.target.nodeId, remotes);
+    }
+  }
+
+  const depthByPair = new Map<string, number>();
+  const depthCycle = [4, 6, 5, 7];
+  for (const [connectorId, remotes] of remoteIdsByConnector) {
+    [...remotes]
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+      .forEach((remoteId, index) => depthByPair.set(`${connectorId}>${remoteId}`, depthCycle[index % depthCycle.length] * GRID));
+  }
+
+  return requests.map((request) => ({
+    ...request,
+    sourceMinStraight: request.source.nodeId.startsWith('vehicle-c')
+      ? depthByPair.get(`${request.source.nodeId}>${request.target.nodeId}`) ?? request.sourceMinStraight
+      : request.sourceMinStraight,
+    targetMinStraight: request.target.nodeId.startsWith('vehicle-c')
+      ? depthByPair.get(`${request.target.nodeId}>${request.source.nodeId}`) ?? request.targetMinStraight
+      : request.targetMinStraight,
+  }));
+}
+
 function routedCount(results: ReturnType<typeof planBundleGridRoutesV3WithSplices>['results']): number {
   return [...results.values()].filter((result) => result.status === 'ROUTED').length;
+}
+
+function incompleteBundles(
+  fixture: ReturnType<typeof createVehicleSpliceStressRoutingFixture>,
+  results: ReturnType<typeof planBundleGridRoutesV3WithSplices>['results'],
+) {
+  return fixture.bundles.flatMap((bundle) => {
+    const bundleRouted = bundle.requests.filter((request) => results.get(request.id)?.status === 'ROUTED').length;
+    return bundleRouted === bundle.requests.length ? [] : [{
+      pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
+      routed: bundleRouted,
+      size: bundle.requests.length,
+    }];
+  });
 }
 
 describe('vehicle perimeter splice stress fixture', () => {
@@ -153,16 +201,20 @@ describe('vehicle perimeter splice stress fixture', () => {
     const plan = planBundleGridRoutesV3WithSplices(oneGridRequests, fixture.obstacles, fixture.displayIds);
     const elapsedMs = Date.now() - started;
     const routed = routedCount(plan.results);
-    const incomplete = fixture.bundles.flatMap((bundle) => {
-      const bundleRouted = bundle.requests.filter((request) => plan.results.get(request.id)?.status === 'ROUTED').length;
-      return bundleRouted === bundle.requests.length ? [] : [{
-        pair: `${bundle.elementADisplayId}-${bundle.elementBDisplayId}`,
-        routed: bundleRouted,
-        size: bundle.requests.length,
-      }];
-    });
     console.info(`[vehicle-routing-v3 connector-fanout-1G] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs}`);
-    console.info(`[vehicle-routing-v3 connector-fanout-1G incomplete] ${JSON.stringify(incomplete)}`);
+    console.info(`[vehicle-routing-v3 connector-fanout-1G incomplete] ${JSON.stringify(incompleteBundles(fixture, plan.results))}`);
+    expect(plan.results.size).toBe(fixture.requests.length);
+  }, 30000);
+
+  it('measures bundle-staggered connector fanout without shortening label clearance', () => {
+    const fixture = createVehicleSpliceStressRoutingFixture();
+    const staggeredRequests = withStaggeredConnectorBundleExits(fixture.requests);
+    const started = Date.now();
+    const plan = planBundleGridRoutesV3WithSplices(staggeredRequests, fixture.obstacles, fixture.displayIds);
+    const elapsedMs = Date.now() - started;
+    const routed = routedCount(plan.results);
+    console.info(`[vehicle-routing-v3 connector-fanout-staggered] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs}`);
+    console.info(`[vehicle-routing-v3 connector-fanout-staggered incomplete] ${JSON.stringify(incompleteBundles(fixture, plan.results))}`);
     expect(plan.results.size).toBe(fixture.requests.length);
   }, 30000);
 });
