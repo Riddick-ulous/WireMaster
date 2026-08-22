@@ -416,11 +416,25 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
 export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: RouteObstacle[] = [], displayIds: ElementDisplayIds = {}): BundleGridPlanV3 {
   const frame = inferFrame(requests, obstacles); const blocked = buildBlockedEdges(frame, obstacles);
   const reservation: Reservation = { edges: new Map(), nodes: new Map() }; const results = new Map<string, OrthogonalRouteResult>();
-  const bundleOrder = buildRouteBundles(requests, displayIds); let corridorBundles = 0; let fallbackBundles = 0;
+  const bundleOrder = buildRouteBundles(requests, displayIds);
+  const pending: RouteBundle[] = [];
+  let corridorBundles = 0;
+
+  // Phase 1: reserve only complete physical bundles. A bundle that cannot be
+  // placed atomically is not allowed to fragment the grid with partial wires
+  // before lower-priority bundles get their own corridor chance.
   for (const bundle of bundleOrder) {
     const corridor = tryCorridor(bundle, frame, blocked, reservation);
-    if (corridor) { corridorBundles += 1; for (const [id, result] of corridor) results.set(id, result); }
-    else { fallbackBundles += 1; for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result); }
+    if (!corridor) { pending.push(bundle); continue; }
+    corridorBundles += 1;
+    for (const [id, result] of corridor) results.set(id, result);
   }
-  return { results, bundleOrder, corridorBundles, fallbackBundles };
+
+  // Phase 2: only after corridor planning is complete do unresolved bundles
+  // fall back to per-wire routing through the remaining capacity/crossings.
+  for (const bundle of pending) {
+    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
+  }
+
+  return { results, bundleOrder, corridorBundles, fallbackBundles: pending.length };
 }
