@@ -243,13 +243,15 @@ The existing 50 × 15 / 375-wire synthetic benchmark remains useful as a raw thr
 
 Current deterministic 40-splice checkpoint:
 
-- tolerant router + bundle-aware contiguous splice egresses: `171/180` (candidate main path),
+- tolerant router + bundle-aware contiguous splice egresses: `175/180` (candidate main path),
 - promotion gate for any connector-fanout composition: at least `160/180`,
-- tolerant router + connector fanout + bundle-aware splice egresses: `145/180` (rejected as main path),
-- pure-bundle router + connector fanout: `114/180` (retained experiment),
+- tolerant router + connector fanout + bundle-aware splice egresses: `149/180` (rejected as main path),
+- pure-bundle router + connector fanout: `120/180` (retained experiment),
 - transformed endpoint-pair groups routable in isolation: `73/73`.
 
 The tolerant candidate is the active Electrical Viewer route planner. The
 viewer derives bundle-grouped connector slots locally, keeps physical pin IDs
 as handle identities, and exposes the 30-connector / 180-wire perimeter harness
-as `Router Demo (30C)` for manual regression testing.
+as `Router Demo (30C)` for manual regression testing. The visible demo routes
+`176/180`, places all connectors on the perimeter, keeps four free grids between
+neighbouring body keepouts, and reserves eight grids in both axes at corners.

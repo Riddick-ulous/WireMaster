@@ -16,7 +16,7 @@ export interface FanoutPureBundleExperimentPlanV3 extends GlobalBundleGridPlanV3
 
 /**
  * Promotion experiment: local connector fanout followed by the tolerant global
- * router. The 40-splice fixture currently routes 145/180, below the hard
+ * router. The 40-splice fixture currently routes 149/180, below the hard
  * 160/180 gate, so this composition is intentionally not the candidate main
  * path yet.
  */

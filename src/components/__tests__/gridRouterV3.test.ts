@@ -18,11 +18,12 @@ describe('grid bundle router V3 spike', () => {
     console.info(`[vehicle-routing-v3 bundle-groups] ${JSON.stringify(bundleStats)}`);
     expect(plan.results.size).toBe(180);
     expect(plan.corridorBundles).toBeGreaterThan(0);
-    expect(metrics.routed).toBeGreaterThanOrEqual(168);
-    // Development guard tolerates shared-runner jitter and the much larger perimeter field.
+    expect(metrics.routed).toBeGreaterThanOrEqual(176);
+    // Development guard tolerates shared-runner jitter plus the required
+    // four-grid side and eight-grid corner clearances of the perimeter field.
     // Final acceptance remains 180/180 in < 1000 ms.
-    expect(elapsedMs).toBeLessThan(4000);
-  }, 6000);
+    expect(elapsedMs).toBeLessThan(6000);
+  }, 8000);
 
   it('keeps the bounded alternative-corridor beam at or above the 168-wire perimeter baseline', () => {
     const fixture = createVehicleStressRoutingFixture();

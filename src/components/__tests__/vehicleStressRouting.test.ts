@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVehicleStressDemoProject, createVehicleWireAssignments, VEHICLE_BUNDLE_SPECS, VEHICLE_CONNECTOR_SPECS } from '../../core/vehicleStressDemo';
 import { buildRouteBundles, bundleEndpointOrder, permutationInversions } from '../routingBundles';
-import { VEHICLE_PERIMETER_CONNECTOR_SPECS } from '../vehiclePerimeterStressLayout';
-import { createVehicleStressRoutingFixture } from '../vehicleStressRoutingFixture';
+import { createPackedVehicleStressLayout, createVehicleStressRoutingFixture } from '../vehicleStressRoutingFixture';
 import { buildViewerConnectorLayoutsV3 } from '../viewerConnectorLayoutV3';
 
 const CAPTURED_V2_BASELINE = {
@@ -38,7 +37,7 @@ describe('vehicle subharness stress fixture', () => {
   });
 
   it('exposes the perimeter stress project through the same viewer-only bundle layout used by routing', () => {
-    const project = createVehicleStressDemoProject(VEHICLE_PERIMETER_CONNECTOR_SPECS);
+    const project = createVehicleStressDemoProject(createPackedVehicleStressLayout().specs);
     const harness = project.subHarnesses[0];
     const layouts = buildViewerConnectorLayoutsV3({
       connectors: harness.connectors,

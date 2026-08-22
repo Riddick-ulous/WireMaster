@@ -5,8 +5,10 @@ import {
 
 /**
  * Routing-stress layout that matches the intended harness viewer usage:
- * most connectors sit around the circumference and point their cable exits
- * into the routing field. Only a few small/service connectors live inside.
+ * every connector sits around the circumference and points its cable exit
+ * into the routing field. These coordinates define only edge membership and
+ * ordering; the final demo coordinates are packed from the derived viewer
+ * connector sizes below.
  */
 export const VEHICLE_PERIMETER_GRID = {
   width: 160,
@@ -17,7 +19,22 @@ export const VEHICLE_PERIMETER_GRID = {
   bottomY: 127,
 } as const;
 
-export const VEHICLE_INTERIOR_CONNECTOR_IDS = new Set(['C12', 'C17', 'C18', 'C30']);
+export const VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS = 4;
+export const VEHICLE_PERIMETER_CORNER_GAP_GRIDS = 2 * VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS;
+
+export interface VehiclePerimeterGrid {
+  width: number;
+  height: number;
+  leftX: number;
+  rightX: number;
+  topY: number;
+  bottomY: number;
+}
+
+export interface VehicleConnectorSpanGrids {
+  width: number;
+  height: number;
+}
 
 type Placement = Pick<VehicleConnectorSpec, 'gridX' | 'gridY' | 'rotation'>;
 
@@ -38,6 +55,7 @@ const placements: Record<string, Placement> = {
   C16: { gridX: 32, gridY: 127, rotation: 270 },
   C13: { gridX: 52, gridY: 127, rotation: 270 },
   C14: { gridX: 74, gridY: 127, rotation: 270 },
+  C17: { gridX: 82, gridY: 127, rotation: 270 },
   C6: { gridX: 89, gridY: 127, rotation: 270 },
   C9: { gridX: 113, gridY: 127, rotation: 270 },
   C10: { gridX: 130, gridY: 127, rotation: 270 },
@@ -45,7 +63,10 @@ const placements: Record<string, Placement> = {
   // Left edge: vertical connectors, exits point right into the workspace.
   C1: { gridX: 0, gridY: 10, rotation: 0 },
   C11: { gridX: 0, gridY: 44, rotation: 0 },
+  C12: { gridX: 0, gridY: 54, rotation: 0 },
+  C18: { gridX: 0, gridY: 64, rotation: 0 },
   C29: { gridX: 0, gridY: 76, rotation: 0 },
+  C30: { gridX: 0, gridY: 88, rotation: 0 },
 
   // Right edge: vertical connectors, exits point left into the workspace.
   C2: { gridX: 154, gridY: 8, rotation: 180 },
@@ -58,11 +79,6 @@ const placements: Record<string, Placement> = {
   C27: { gridX: 154, gridY: 109, rotation: 180 },
   C28: { gridX: 154, gridY: 118, rotation: 180 },
 
-  // Sparse interior service/actuator connectors.
-  C12: { gridX: 42, gridY: 48, rotation: 90 },
-  C17: { gridX: 82, gridY: 82, rotation: 180 },
-  C18: { gridX: 70, gridY: 62, rotation: 0 },
-  C30: { gridX: 108, gridY: 52, rotation: 270 },
 };
 
 export const VEHICLE_PERIMETER_CONNECTOR_SPECS: VehicleConnectorSpec[] = VEHICLE_CONNECTOR_SPECS.map((spec) => {
@@ -70,3 +86,71 @@ export const VEHICLE_PERIMETER_CONNECTOR_SPECS: VehicleConnectorSpec[] = VEHICLE
   if (!placement) throw new Error(`Missing perimeter stress placement for ${spec.displayId}`);
   return { ...spec, ...placement };
 });
+
+/**
+ * Packs already-sized viewer connectors around a rectangle.
+ *
+ * Neighbours on the same edge retain four free routing grids between their
+ * body keepouts. The first/last connector on each edge retains eight grids in
+ * both axes from the perpendicular connector row at every corner.
+ */
+export function packVehiclePerimeterSpecs(
+  template: VehicleConnectorSpec[],
+  spans: Readonly<Record<string, VehicleConnectorSpanGrids>>,
+): { specs: VehicleConnectorSpec[]; grid: VehiclePerimeterGrid } {
+  const gap = VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS;
+  const cornerGap = VEHICLE_PERIMETER_CORNER_GAP_GRIDS;
+  const verticalDepth = Math.ceil(180 / 28);
+  const horizontalDepth = Math.ceil((31 + 92) / 28);
+  const placements = new Map<string, { gridX: number; gridY: number }>();
+
+  const top = template.filter((spec) => spec.gridY === VEHICLE_PERIMETER_GRID.topY).sort((a, b) => a.gridX - b.gridX);
+  const bottom = template.filter((spec) => spec.gridY === VEHICLE_PERIMETER_GRID.bottomY).sort((a, b) => a.gridX - b.gridX);
+  const left = template.filter((spec) => spec.gridX === VEHICLE_PERIMETER_GRID.leftX).sort((a, b) => a.gridY - b.gridY);
+  const right = template.filter((spec) => spec.gridX === VEHICLE_PERIMETER_GRID.rightX).sort((a, b) => a.gridY - b.gridY);
+
+  const edgeCount = (spec: VehicleConnectorSpec) => Number(spec.gridY === VEHICLE_PERIMETER_GRID.topY)
+    + Number(spec.gridY === VEHICLE_PERIMETER_GRID.bottomY)
+    + Number(spec.gridX === VEHICLE_PERIMETER_GRID.leftX)
+    + Number(spec.gridX === VEHICLE_PERIMETER_GRID.rightX);
+  if (template.some((spec) => edgeCount(spec) !== 1)) throw new Error('Every vehicle demo connector must belong to exactly one perimeter edge');
+
+  const spanFor = (spec: VehicleConnectorSpec): VehicleConnectorSpanGrids => {
+    const span = spans[spec.displayId];
+    if (!span) throw new Error(`Missing packed viewer span for ${spec.displayId}`);
+    return span;
+  };
+
+  const packHorizontal = (items: VehicleConnectorSpec[]) => {
+    let cursor = verticalDepth + cornerGap;
+    for (const spec of items) {
+      placements.set(spec.displayId, { gridX: cursor, gridY: 0 });
+      cursor += spanFor(spec).width + gap;
+    }
+    return cursor - gap;
+  };
+  const packVertical = (items: VehicleConnectorSpec[]) => {
+    let cursor = horizontalDepth + cornerGap;
+    for (const spec of items) {
+      placements.set(spec.displayId, { gridX: 0, gridY: cursor });
+      cursor += spanFor(spec).height + gap;
+    }
+    return cursor - gap;
+  };
+
+  const topEnd = packHorizontal(top);
+  const bottomEnd = packHorizontal(bottom);
+  const leftEnd = packVertical(left);
+  const rightEnd = packVertical(right);
+  const rightX = Math.max(topEnd, bottomEnd) + cornerGap;
+  const bottomY = Math.max(leftEnd, rightEnd) + cornerGap;
+
+  for (const spec of bottom) placements.set(spec.displayId, { ...placements.get(spec.displayId)!, gridY: bottomY });
+  for (const spec of right) placements.set(spec.displayId, { ...placements.get(spec.displayId)!, gridX: rightX });
+
+  const specs = template.map((spec) => ({ ...spec, ...placements.get(spec.displayId)! }));
+  return {
+    specs,
+    grid: { width: rightX + verticalDepth, height: bottomY + horizontalDepth, leftX: 0, rightX, topY: 0, bottomY },
+  };
+}

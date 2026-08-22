@@ -94,7 +94,7 @@ describe('grid V3 connector fanout experiment', () => {
     const routed = routedCount(plan.results);
 
     console.info(`[vehicle-routing-v3 fanout-tolerant-experiment] routed=${routed}/${fixture.requests.length} elapsedMs=${elapsedMs} connectorFanouts=${plan.connectorFanouts} corridorBundles=${plan.corridorBundles} fallbackBundles=${plan.fallbackBundles}`);
-    expect(routed).toBe(145);
+    expect(routed).toBe(149);
 
     mkdirSync('artifacts/router-v3', { recursive: true });
     const svg = renderRouterDiagnosticSvg({
@@ -140,6 +140,7 @@ describe('grid V3 connector fanout experiment', () => {
     console.info(`[vehicle-routing-v3 fanout-bundle unrouted] ${JSON.stringify(unrouted)}`);
 
     expect(plan.results.size).toBe(fixture.requests.length);
+    expect(routed).toBe(120);
     expect(plan.connectorFanouts).toBeGreaterThan(0);
     expect(plan.endpointOrderMismatchBundles).toBe(0);
     expect(partial).toEqual([]);

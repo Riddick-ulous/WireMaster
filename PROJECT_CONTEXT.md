@@ -122,11 +122,12 @@ physical connector terminals + physical splice terminals
 - `gridGlobalBundleRouterV3` remains a named pure-bundle experiment, not the candidate main path;
 - connector fanout, per-cavity turn lanes, endpoint/viewer-slot separation and diagnostic SVGs remain preserved experiments/regressions;
 - all 73/73 transformed endpoint-pair bundle groups remain independently routable;
-- the accepted candidate currently routes 171/180 wires on the deterministic 40-splice fixture;
+- the visible 30-connector demo keeps every connector on the perimeter, at least four free 28 px grids between neighbouring connector bodies, and double (eight-grid) clearance in both axes at every corner;
+- the accepted candidate currently routes 176/180 wires on the 30-connector demo and 175/180 wires on the deterministic 40-splice fixture;
 - the accepted candidate is now the Electrical Viewer main path; connector cavities are projected into derived bundle-grouped viewer slots without changing electrical endpoint identity;
 - the toolbar keeps a directly loadable `Router Demo (30C)` project with the 30-connector / 180-wire perimeter fixture for manual testing;
-- connector fanout plus the tolerant router reached only 145/180 (141/180 with the legacy splice adapter), below the hard 160/180 promotion gate, so connector fanout is not in the candidate main path yet;
-- connector fanout plus the rigid pure-bundle router remains diagnostic-only at 114/180.
+- connector fanout plus the tolerant router reaches only 149/180, below the hard 160/180 promotion gate, so connector fanout is not in the candidate main path yet;
+- connector fanout plus the rigid pure-bundle router remains diagnostic-only at 120/180.
 
 ## Later stages
 ```text

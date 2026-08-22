@@ -2,10 +2,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { planBundleGridRoutesV3WithSplices } from '../gridBundleRouterV3Splices';
 import { renderRouterDiagnosticSvg } from '../routerDiagnosticsV3';
+import { VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS, VEHICLE_PERIMETER_CORNER_GAP_GRIDS } from '../vehiclePerimeterStressLayout';
 import {
   VEHICLE_CONNECTOR_NEAR_SPLICE_COUNT,
   VEHICLE_FREE_SPLICE_COUNT,
-  VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS,
   VEHICLE_SPLICE_COUNT,
   connectorNearReservedSlots,
   createVehicleSpliceStressRoutingFixture,
@@ -40,7 +40,7 @@ function expectSideGap(fixture: ReturnType<typeof createVehicleSpliceStressRouti
 }
 
 describe('vehicle perimeter splice stress fixture', () => {
-  it('keeps at least four routing grids between neighbouring perimeter connectors including the corners', () => {
+  it('keeps four routing grids between neighbours and double clearance in both axes at every corner', () => {
     const fixture = createVehicleSpliceStressRoutingFixture();
     expectSideGap(fixture, 'top');
     expectSideGap(fixture, 'bottom');
@@ -51,12 +51,20 @@ describe('vehicle perimeter splice stress fixture', () => {
     const bottom = sideConnectors(fixture, 'bottom').map((spec) => connectorBody(fixture, spec.displayId));
     const left = sideConnectors(fixture, 'left').map((spec) => connectorBody(fixture, spec.displayId));
     const right = sideConnectors(fixture, 'right').map((spec) => connectorBody(fixture, spec.displayId));
-    const gap = VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS * GRID;
+    const cornerGap = VEHICLE_PERIMETER_CORNER_GAP_GRIDS * GRID;
+    const leftRight = Math.max(...left.map((body) => body.x + body.width));
+    const rightLeft = Math.min(...right.map((body) => body.x));
+    const topBottom = Math.max(...top.map((body) => body.y + body.height));
+    const bottomTop = Math.min(...bottom.map((body) => body.y));
 
-    expect(Math.min(...top.map((body) => body.x)) - Math.max(...left.map((body) => body.x + body.width))).toBeGreaterThanOrEqual(gap - 0.25);
-    expect(Math.min(...left.map((body) => body.y)) - Math.max(...top.map((body) => body.y + body.height))).toBeGreaterThanOrEqual(gap - 0.25);
-    expect(Math.min(...right.map((body) => body.x)) - Math.max(...top.map((body) => body.x + body.width))).toBeGreaterThanOrEqual(gap - 0.25);
-    expect(Math.min(...bottom.map((body) => body.y)) - Math.max(...left.map((body) => body.y + body.height))).toBeGreaterThanOrEqual(gap - 0.25);
+    expect(Math.min(...top.map((body) => body.x)) - leftRight).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(Math.min(...left.map((body) => body.y)) - topBottom).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(rightLeft - Math.max(...top.map((body) => body.x + body.width))).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(Math.min(...right.map((body) => body.y)) - topBottom).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(Math.min(...bottom.map((body) => body.x)) - leftRight).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(bottomTop - Math.max(...left.map((body) => body.y + body.height))).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(rightLeft - Math.max(...bottom.map((body) => body.x + body.width))).toBeGreaterThanOrEqual(cornerGap - 0.25);
+    expect(bottomTop - Math.max(...right.map((body) => body.y + body.height))).toBeGreaterThanOrEqual(cornerGap - 0.25);
   });
 
   it('contains 40 splices with 30 connector-near junctions and pin-pitch clearance around every anchor', () => {
@@ -108,9 +116,9 @@ describe('vehicle perimeter splice stress fixture', () => {
     expect(plan.results.size).toBe(fixture.requests.length);
     // Rework acceptance gate: the tolerant global router plus bundle-aware
     // splice egresses must never fall below the established 160/180 baseline.
-    // The current deterministic checkpoint routes 171/180; 180/180 remains the
+    // The current deterministic checkpoint routes 175/180; 180/180 remains the
     // final acceptance target.
-    expect(routed).toBeGreaterThanOrEqual(160);
+    expect(routed).toBeGreaterThanOrEqual(175);
     expect(elapsedMs).toBeLessThan(25000);
     for (const result of plan.results.values()) {
       if (result.status !== 'ROUTED') continue;

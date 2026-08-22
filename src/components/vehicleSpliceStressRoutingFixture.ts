@@ -9,7 +9,11 @@ import {
   type ConnectorLayoutPin,
   type ConnectorVisualLayout,
 } from './connectorBundleLayout';
-import { VEHICLE_INTERIOR_CONNECTOR_IDS, VEHICLE_PERIMETER_CONNECTOR_SPECS, VEHICLE_PERIMETER_GRID } from './vehiclePerimeterStressLayout';
+import {
+  VEHICLE_PERIMETER_CONNECTOR_SPECS,
+  packVehiclePerimeterSpecs,
+  type VehiclePerimeterGrid,
+} from './vehiclePerimeterStressLayout';
 import {
   outward,
   type CardinalSide,
@@ -20,7 +24,6 @@ import {
 } from './routingGeometry';
 import { buildRouteBundles, type RouteBundle } from './routingBundles';
 
-export const VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS = 4;
 export const VEHICLE_SPLICE_COUNT = 40;
 export const VEHICLE_CONNECTOR_NEAR_SPLICE_COUNT = 30;
 export const VEHICLE_FREE_SPLICE_COUNT = 10;
@@ -42,6 +45,15 @@ interface TopologySpliceEnd { kind: 'splice'; spliceId: string }
 type TopologyEnd = TopologyPinEnd | TopologySpliceEnd;
 interface TopologyWire { id: string; a: TopologyEnd; b: TopologyEnd; original: VehicleWireAssignment }
 interface IncidentEnd { key: string; assignment: VehicleWireAssignment; end: 'a' | 'b'; connectorId: string; pinIndex: number }
+
+// Frozen electrical-fixture order for selecting free-splice members. It is the
+// original 73-bundle topology order and deliberately independent of any later
+// viewer-only perimeter repacking.
+const FREE_SPLICE_REMOTE_CONNECTOR_ORDER = [
+  'C3', 'C4', 'C19', 'C20', 'C5', 'C7', 'C8', 'C2', 'C1', 'C21',
+  'C11', 'C12', 'C30', 'C22', 'C18', 'C23', 'C29', 'C24', 'C17',
+  'C25', 'C26', 'C27', 'C28', 'C15', 'C16', 'C13', 'C14', 'C6', 'C9', 'C10',
+] as const;
 
 export interface VehicleSpliceStressSpec {
   id: string;
@@ -67,7 +79,7 @@ export interface VehicleSpliceStressRoutingFixture {
   splices: VehicleSpliceStressSpec[];
   totalPins: number;
   usedPins: number;
-  perimeterGrid: { width: number; height: number; leftX: number; rightX: number; topY: number; bottomY: number };
+  perimeterGrid: VehiclePerimeterGrid;
 }
 
 function connectorNodeId(displayId: string): string { return `vehicle-${displayId.toLowerCase()}`; }
@@ -128,7 +140,7 @@ function buildTopology(assignments: VehicleWireAssignment[]): { wires: TopologyW
 
   // Ten 5W free splices. Select at most one free-splice end from each wire so
   // the generated topology never degenerates into a same-splice self edge.
-  const templateById = new Map(VEHICLE_PERIMETER_CONNECTOR_SPECS.map((spec) => [connectorNodeId(spec.displayId), spec]));
+  const topologyRank = new Map(FREE_SPLICE_REMOTE_CONNECTOR_ORDER.map((displayId, index) => [connectorNodeId(displayId), index]));
   const freeCandidates = assignments.flatMap((assignment) => {
     const candidates: IncidentEnd[] = [];
     if (!endpointSplice.has(endKey(assignment, 'a'))) candidates.push({ key: endKey(assignment, 'a'), assignment, end: 'a', connectorId: assignment.aConnectorId, pinIndex: assignment.aPinIndex });
@@ -136,9 +148,8 @@ function buildTopology(assignments: VehicleWireAssignment[]): { wires: TopologyW
     if (!candidates.length) return [];
     const selected = candidates[assignment.id.charCodeAt(assignment.id.length - 1) % candidates.length];
     const otherConnectorId = selected.end === 'a' ? assignment.bConnectorId : assignment.aConnectorId;
-    const other = templateById.get(otherConnectorId)!;
-    return [{ ...selected, otherX: other.gridX, otherY: other.gridY }];
-  }).sort((left, right) => left.otherY - right.otherY || left.otherX - right.otherX || left.assignment.id.localeCompare(right.assignment.id, undefined, { numeric: true }));
+    return [{ ...selected, otherRank: topologyRank.get(otherConnectorId) ?? Number.MAX_SAFE_INTEGER }];
+  }).sort((left, right) => left.otherRank - right.otherRank || left.assignment.id.localeCompare(right.assignment.id, undefined, { numeric: true }));
 
   if (freeCandidates.length < VEHICLE_FREE_SPLICE_COUNT * 5) throw new Error('Not enough free splice endpoint candidates');
   for (let index = 0; index < VEHICLE_FREE_SPLICE_COUNT; index += 1) {
@@ -243,61 +254,6 @@ function verticalSpanGrids(layout: ConnectorVisualLayout): number {
   return Math.ceil((HEADER_HEIGHT + layout.totalSlots * PIN_PITCH) / VEHICLE_GRID_PX);
 }
 
-function packPerimeterSpecs(
-  template: VehicleConnectorSpec[],
-  layouts: Record<string, ConnectorVisualLayout>,
-): { specs: VehicleConnectorSpec[]; grid: VehicleSpliceStressRoutingFixture['perimeterGrid'] } {
-  const gap = VEHICLE_PERIMETER_CONNECTOR_GAP_GRIDS;
-  const verticalDepth = Math.ceil(CONNECTOR_WIDTH / VEHICLE_GRID_PX);
-  const horizontalDepth = Math.ceil((HEADER_HEIGHT + HORIZONTAL_PIN_HEIGHT) / VEHICLE_GRID_PX);
-  const startX = verticalDepth + gap;
-  const startY = horizontalDepth + gap;
-  const placements = new Map<string, { gridX: number; gridY: number }>();
-
-  const top = template.filter((spec) => spec.gridY === VEHICLE_PERIMETER_GRID.topY).sort((a, b) => a.gridX - b.gridX);
-  const bottom = template.filter((spec) => spec.gridY === VEHICLE_PERIMETER_GRID.bottomY).sort((a, b) => a.gridX - b.gridX);
-  const left = template.filter((spec) => spec.gridX === VEHICLE_PERIMETER_GRID.leftX).sort((a, b) => a.gridY - b.gridY);
-  const right = template.filter((spec) => spec.gridX === VEHICLE_PERIMETER_GRID.rightX).sort((a, b) => a.gridY - b.gridY);
-
-  const packHorizontal = (items: VehicleConnectorSpec[]) => {
-    let cursor = startX;
-    for (const spec of items) {
-      placements.set(spec.displayId, { gridX: cursor, gridY: 0 });
-      cursor += horizontalSpanGrids(layouts[connectorNodeId(spec.displayId)]) + gap;
-    }
-    return cursor - gap;
-  };
-  const packVertical = (items: VehicleConnectorSpec[]) => {
-    let cursor = startY;
-    for (const spec of items) {
-      placements.set(spec.displayId, { gridX: 0, gridY: cursor });
-      cursor += verticalSpanGrids(layouts[connectorNodeId(spec.displayId)]) + gap;
-    }
-    return cursor - gap;
-  };
-
-  const topEnd = packHorizontal(top);
-  const bottomEnd = packHorizontal(bottom);
-  const leftEnd = packVertical(left);
-  const rightEnd = packVertical(right);
-  const rightX = Math.max(topEnd, bottomEnd) + gap + verticalDepth;
-  const bottomY = Math.max(leftEnd, rightEnd) + gap + horizontalDepth;
-
-  for (const spec of bottom) placements.set(spec.displayId, { ...placements.get(spec.displayId)!, gridY: bottomY });
-  for (const spec of right) placements.set(spec.displayId, { ...placements.get(spec.displayId)!, gridX: rightX });
-
-  const interiorFractions: Record<string, [number, number]> = {
-    C12: [0.30, 0.34], C17: [0.55, 0.66], C18: [0.47, 0.50], C30: [0.70, 0.40],
-  };
-  for (const spec of template.filter((item) => VEHICLE_INTERIOR_CONNECTOR_IDS.has(item.displayId))) {
-    const [fx, fy] = interiorFractions[spec.displayId] ?? [0.5, 0.5];
-    placements.set(spec.displayId, { gridX: Math.round(rightX * fx), gridY: Math.round(bottomY * fy) });
-  }
-
-  const specs = template.map((spec) => ({ ...spec, ...placements.get(spec.displayId)! }));
-  return { specs, grid: { width: rightX, height: bottomY, leftX: 0, rightX, topY: 0, bottomY } };
-}
-
 function connectorPosition(spec: VehicleConnectorSpec): RoutePoint {
   return { x: spec.gridX * VEHICLE_GRID_PX, y: spec.gridY * VEHICLE_GRID_PX };
 }
@@ -369,7 +325,15 @@ export function createVehicleSpliceStressRoutingFixture(): VehicleSpliceStressRo
   const assignments = createVehicleWireAssignments();
   const topology = buildTopology(assignments);
   const templateLayouts = buildLayouts(topology.wires, topology.splices, VEHICLE_PERIMETER_CONNECTOR_SPECS);
-  const packed = packPerimeterSpecs(VEHICLE_PERIMETER_CONNECTOR_SPECS, templateLayouts);
+  const spans = Object.fromEntries(VEHICLE_PERIMETER_CONNECTOR_SPECS.map((spec) => {
+    const layout = templateLayouts[connectorNodeId(spec.displayId)];
+    const horizontal = spec.rotation === 90 || spec.rotation === 270;
+    return [spec.displayId, {
+      width: horizontal ? horizontalSpanGrids(layout) : Math.ceil(CONNECTOR_WIDTH / VEHICLE_GRID_PX),
+      height: horizontal ? Math.ceil((HEADER_HEIGHT + HORIZONTAL_PIN_HEIGHT) / VEHICLE_GRID_PX) : verticalSpanGrids(layout),
+    }];
+  }));
+  const packed = packVehiclePerimeterSpecs(VEHICLE_PERIMETER_CONNECTOR_SPECS, spans);
   const connectorLayouts = buildLayouts(topology.wires, topology.splices, packed.specs);
   const specsById = new Map(packed.specs.map((spec) => [connectorNodeId(spec.displayId), spec]));
   const spliceById = new Map(topology.splices.map((splice) => [splice.id, splice]));
