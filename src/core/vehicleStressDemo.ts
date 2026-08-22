@@ -62,7 +62,7 @@ export const VEHICLE_CONNECTOR_SPECS: VehicleConnectorSpec[] = [
   { displayId: 'C30', label: 'Diagnostics / Service', pinCount: 12, gridX: 34, gridY: 20, rotation: 180 },
 ].map((spec): VehicleConnectorSpec => ({
   ...spec,
-  gridX: spec.displayId === 'C30' ? 84 : spec.gridX * 2,
+  gridX: spec.displayId === 'C30' ? 76 : spec.gridX * 2,
   rotation: spec.rotation as ViewerRotation,
 }));
 
