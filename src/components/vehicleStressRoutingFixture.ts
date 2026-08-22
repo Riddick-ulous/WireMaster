@@ -5,7 +5,7 @@ import {
   type VehicleConnectorSpec,
 } from '../core/vehicleStressDemo';
 import { routeSegments, type OrthogonalRouteResult, type RouteObstacle, type RouteRequest, type RouteTerminal } from './routingGeometry';
-import { buildRouteBundles, type RouteBundle } from './routingBundles';
+import { buildRouteBundles, bundleEndpointOrder, type RouteBundle } from './routingBundles';
 
 export interface VehicleStressRoutingFixture {
   requests: RouteRequest[];
@@ -105,6 +105,62 @@ export function createVehicleStressRoutingFixture(): VehicleStressRoutingFixture
     bundles,
     totalPins: VEHICLE_CONNECTOR_SPECS.reduce((sum, spec) => sum + spec.pinCount, 0),
     usedPins: assignments.length * 2,
+  };
+}
+
+function cloneRequest(request: RouteRequest): RouteRequest {
+  return {
+    ...request,
+    source: { ...request.source, options: request.source.options.map((option) => ({ ...option, point: { ...option.point } })) },
+    target: { ...request.target, options: request.target.options.map((option) => ({ ...option, point: { ...option.point } })) },
+    previousPoints: request.previousPoints?.map((point) => ({ ...point })),
+  };
+}
+
+function terminalOf(request: RouteRequest, nodeId: string): RouteTerminal {
+  if (request.source.nodeId === nodeId) return request.source;
+  if (request.target.nodeId === nodeId) return request.target;
+  throw new Error(`${request.id} is not connected to ${nodeId}`);
+}
+
+/**
+ * Layout-only cavity permutation experiment for the stress fixture.
+ *
+ * For each physical endpoint-pair bundle the target connector keeps the exact
+ * same set of visible pin slots, but the wires are assigned to those slots in
+ * the source-side order. Electrical pin/wire identity is unchanged; only the
+ * viewer coordinates of the cavity rows are permuted. Because all stress-demo
+ * labels have equal geometry, the union of label keepouts for that cavity block
+ * is unchanged and the existing obstacle fixture remains valid.
+ */
+export function withBundleCavityPermutation(fixture: VehicleStressRoutingFixture): VehicleStressRoutingFixture {
+  const requests = fixture.requests.map(cloneRequest);
+  const byId = new Map(requests.map((request) => [request.id, request]));
+  const bundles = buildRouteBundles(requests, fixture.displayIds);
+
+  for (const bundle of bundles) {
+    if (bundle.requests.length <= 1) continue;
+    const sourceOrder = bundleEndpointOrder(bundle, bundle.elementAId);
+    const targetOrder = bundleEndpointOrder(bundle, bundle.elementBId);
+    const targetSlots = targetOrder.map((wireId) => {
+      const request = byId.get(wireId)!;
+      const terminal = terminalOf(request, bundle.elementBId);
+      return terminal.options.map((option) => ({ ...option.point }));
+    });
+
+    sourceOrder.forEach((wireId, index) => {
+      const request = byId.get(wireId)!;
+      const terminal = terminalOf(request, bundle.elementBId);
+      terminal.options.forEach((option, optionIndex) => {
+        option.point = { ...(targetSlots[index]?.[optionIndex] ?? option.point) };
+      });
+    });
+  }
+
+  return {
+    ...fixture,
+    requests,
+    bundles: buildRouteBundles(requests, fixture.displayIds),
   };
 }
 
