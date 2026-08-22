@@ -33,6 +33,8 @@ interface Reservation {
 }
 interface State extends Node { dir: Direction; run: number; crossingStraight: boolean }
 interface QueueItem { key: string; state: State; g: number; f: number }
+interface Passage { blocked: boolean; crossing: boolean }
+interface CorridorStep { blocked: boolean; crossingAtStart: boolean; crossingAtEnd: boolean; crossings: number }
 
 export interface BundleGridPlanV3 {
   results: Map<string, OrthogonalRouteResult>;
@@ -188,15 +190,48 @@ function reconstruct(came: Map<string, string>, states: Map<string, State>, key:
   return out.reverse();
 }
 
-function corridorFootprintClear(a: Node, b: Node, dir: Direction, width: number, blocked: Set<string>, reservation: Reservation) {
-  const normal = rightNormal(dir);
-  for (let track = 0; track < width; track += 1) {
-    const ta = add(a, normal, track); const tb = add(b, normal, track); const key = edgeKey(ta, tb);
-    if (blocked.has(key) || reservation.edges.has(key)) return false;
-    if (reservation.nodes.has(nodeKey(ta)) || reservation.nodes.has(nodeKey(tb))) return false;
+function passageAtNode(usage: Usage | undefined, move: Orientation, isEnd: boolean): Passage {
+  if (!usage) return { blocked: false, crossing: false };
+  if (usage.bend) return { blocked: true, crossing: false };
+  if (move === 'h') {
+    if (usage.h) return { blocked: true, crossing: false };
+    if (usage.v) return { blocked: isEnd, crossing: !isEnd };
+  } else {
+    if (usage.v) return { blocked: true, crossing: false };
+    if (usage.h) return { blocked: isEnd, crossing: !isEnd };
   }
-  return true;
+  return { blocked: false, crossing: false };
 }
+
+function corridorFootprintStep(
+  a: Node,
+  b: Node,
+  dir: Direction,
+  width: number,
+  blocked: Set<string>,
+  reservation: Reservation,
+  isTarget: boolean,
+): CorridorStep {
+  const normal = rightNormal(dir);
+  const move = orient(dir);
+  let crossingAtStart = false;
+  let crossingAtEnd = false;
+  let crossings = 0;
+  for (let track = 0; track < width; track += 1) {
+    const ta = add(a, normal, track);
+    const tb = add(b, normal, track);
+    const key = edgeKey(ta, tb);
+    if (blocked.has(key) || reservation.edges.has(key)) return { blocked: true, crossingAtStart: false, crossingAtEnd: false, crossings: 0 };
+    const startPassage = passageAtNode(reservation.nodes.get(nodeKey(ta)), move, false);
+    const endPassage = passageAtNode(reservation.nodes.get(nodeKey(tb)), move, isTarget);
+    if (startPassage.blocked || endPassage.blocked) return { blocked: true, crossingAtStart: false, crossingAtEnd: false, crossings: 0 };
+    crossingAtStart ||= startPassage.crossing;
+    crossingAtEnd ||= endPassage.crossing;
+    if (endPassage.crossing) crossings += 1;
+  }
+  return { blocked: false, crossingAtStart, crossingAtEnd, crossings };
+}
+
 function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direction, targetDir: Direction, width: number, blocked: Set<string>, reservation: Reservation): Node[] | null {
   const open = new Heap(); const score = new Map<string, number>(); const came = new Map<string, string>(); const states = new Map<string, State>();
   const initial: State = { ...start, dir: startDir, run: 0, crossingStraight: false };
@@ -206,15 +241,20 @@ function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direc
   while (open.size) {
     const item = open.pop()!; if (item.g > (score.get(item.key) ?? Infinity) + EPS) continue;
     const current = item.state;
-    if (current.gx === target.gx && current.gy === target.gy && current.dir === targetDir && current.run >= CORRIDOR_MIN_RUN) return reconstruct(came, states, item.key);
+    if (current.gx === target.gx && current.gy === target.gy && current.dir === targetDir && current.run >= CORRIDOR_MIN_RUN && !current.crossingStraight) return reconstruct(came, states, item.key);
     for (const dir of ['left', 'right', 'up', 'down'] as Direction[]) {
-      if (dir === opposite(current.dir)) continue;
+      if (dir === opposite(current.dir) || (current.crossingStraight && dir !== current.dir)) continue;
       const turning = dir !== current.dir; if (turning && current.run < CORRIDOR_MIN_RUN) continue;
       const next = add(current, vec(dir)); if (!inBounds(next, bounds)) continue;
-      if (!corridorFootprintClear(current, next, dir, width, blocked, reservation)) continue;
+      const isTarget = next.gx === target.gx && next.gy === target.gy;
+      const step = corridorFootprintStep(current, next, dir, width, blocked, reservation, isTarget);
+      if (step.blocked) continue;
+      if (step.crossingAtStart && (!current.crossingStraight || turning)) continue;
       const run = turning ? 1 : Math.min(CORRIDOR_MIN_RUN, current.run + 1);
-      const nextState: State = { ...next, dir, run, crossingStraight: false }; const key = stateKey(nextState);
-      const g = item.g + 1 + (turning ? TURN_COST : 0); if (g + EPS >= (score.get(key) ?? Infinity)) continue;
+      const nextState: State = { ...next, dir, run, crossingStraight: step.crossingAtEnd };
+      const key = stateKey(nextState);
+      const g = item.g + 1 + (turning ? TURN_COST : 0) + step.crossings * CROSSING_COST;
+      if (g + EPS >= (score.get(key) ?? Infinity)) continue;
       score.set(key, g); came.set(key, item.key); states.set(key, nextState);
       open.push({ key, state: nextState, g, f: g + gridDistance(next, target) });
     }
@@ -252,13 +292,24 @@ function expand(points: Node[]): Node[] {
   }
   return out;
 }
-function pathClear(points: Node[], blocked: Set<string>, reservation: Reservation) {
-  const nodes = expand(points); if (nodes.length < 2) return false;
+function pathCompatibility(points: Node[], blocked: Set<string>, reservation: Reservation): { valid: boolean; crossings: number } {
+  const nodes = expand(points); if (nodes.length < 2) return { valid: false, crossings: 0 };
   for (let i = 1; i < nodes.length; i += 1) {
-    if (blocked.has(edgeKey(nodes[i - 1], nodes[i])) || reservation.edges.has(edgeKey(nodes[i - 1], nodes[i]))) return false;
-    if (reservation.nodes.has(nodeKey(nodes[i - 1])) || reservation.nodes.has(nodeKey(nodes[i]))) return false;
+    if (blocked.has(edgeKey(nodes[i - 1], nodes[i])) || reservation.edges.has(edgeKey(nodes[i - 1], nodes[i]))) return { valid: false, crossings: 0 };
   }
-  return true;
+  let crossings = 0;
+  for (let i = 0; i < nodes.length; i += 1) {
+    const usage = reservation.nodes.get(nodeKey(nodes[i]));
+    if (!usage) continue;
+    if (i === 0 || i === nodes.length - 1) return { valid: false, crossings: 0 };
+    const before = edgeOrient(nodes[i - 1], nodes[i]);
+    const after = edgeOrient(nodes[i], nodes[i + 1]);
+    if (before !== after) return { valid: false, crossings: 0 };
+    const passage = passageAtNode(usage, before, false);
+    if (passage.blocked) return { valid: false, crossings: 0 };
+    if (passage.crossing) crossings += 1;
+  }
+  return { valid: true, crossings };
 }
 function reserve(points: Node[], reservation: Reservation, wireId: string, bundleKey: string) {
   const nodes = expand(points);
@@ -291,10 +342,13 @@ function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, re
     if (items[i].a.node.gx !== sa.gx || items[i].a.node.gy !== sa.gy || targetSlots[i].node.gx !== tb.gx || targetSlots[i].node.gy !== tb.gy) return null;
   }
   const spine = searchCorridor(frame, sourceRef, targetRef, startDir, targetDir, width, blocked, reservation); if (!spine) return null;
-  const tracks = items.map((_, i) => offsetTrack(spine, i)); if (tracks.some((track) => !pathClear(track, blocked, reservation))) return null;
+  const tracks = items.map((_, i) => offsetTrack(spine, i));
+  const compatibilities = tracks.map((track) => pathCompatibility(track, blocked, reservation));
+  if (compatibilities.some((compatibility) => !compatibility.valid)) return null;
   const results = new Map<string, OrthogonalRouteResult>();
   for (let i = 0; i < width; i += 1) {
-    const item = items[i]; const slot = targetSlots[i]; const track = tracks[i]; reserve(track, reservation, item.request.id, bundle.key);
+    const item = items[i]; const slot = targetSlots[i]; const track = tracks[i];
+    reserve(track, reservation, item.request.id, bundle.key);
     const gridPoints = track.map((p) => world(frame, p));
     const aToB = simplifyRoute([item.a.option.point, item.a.world, ...gridPoints.slice(1, -1), slot.world, slot.option.point]);
     const aEnd = endpoint(item.request, bundle.elementAId); const forward = aEnd.requestSource; const points = forward ? aToB : aToB.slice().reverse();
@@ -306,7 +360,7 @@ function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, re
       sourceSide: forward ? item.a.option.side : slot.option.side,
       targetSide: forward ? slot.option.side : item.a.option.side,
       points,
-      crossings: 0,
+      crossings: compatibilities[i].crossings,
       bends: Math.max(0, segments.length - 1),
       length: segments.reduce((sum, segment) => sum + manhattan(segment.a, segment.b), 0),
     });
@@ -314,13 +368,7 @@ function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, re
   return results;
 }
 
-function nodeConflict(usage: Usage | undefined, move: Orientation, isEnd: boolean) {
-  if (!usage) return { blocked: false, crossing: false };
-  if (usage.bend) return { blocked: true, crossing: false };
-  if (move === 'h') { if (usage.h) return { blocked: true, crossing: false }; if (usage.v) return { blocked: isEnd, crossing: !isEnd }; }
-  else { if (usage.v) return { blocked: true, crossing: false }; if (usage.h) return { blocked: isEnd, crossing: !isEnd }; }
-  return { blocked: false, crossing: false };
-}
+function nodeConflict(usage: Usage | undefined, move: Orientation, isEnd: boolean) { return passageAtNode(usage, move, isEnd); }
 function searchSingle(frame: Frame, start: Portal, target: Portal, blocked: Set<string>, reservation: Reservation): Node[] | null {
   const startDir = sideDir(start.option.side); const targetDir = opposite(sideDir(target.option.side));
   const open = new Heap(); const score = new Map<string, number>(); const came = new Map<string, string>(); const states = new Map<string, State>();
@@ -351,12 +399,14 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
     const b = bEnd.terminal.options.length === 1 ? portal(frame, bEnd.terminal.options[0], bEnd.minStraight) : null;
     if (!a || !b) { out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' }); continue; }
     const path = searchSingle(frame, a, b, blocked, reservation); if (!path) { out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' }); continue; }
+    const compatibility = pathCompatibility(path, blocked, reservation);
+    if (!compatibility.valid) { out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' }); continue; }
     reserve(path, reservation, request.id, bundle.key);
     const aToB = simplifyRoute([a.option.point, a.world, ...path.slice(1, -1).map((p) => world(frame, p)), b.world, b.option.point]);
     const forward = aEnd.requestSource; const points = forward ? aToB : aToB.slice().reverse(); const segments = routeSegments(points);
     out.set(request.id, {
       status: 'ROUTED', sourceHandleId: forward ? a.option.key : b.option.key, targetHandleId: forward ? b.option.key : a.option.key,
-      sourceSide: forward ? a.option.side : b.option.side, targetSide: forward ? b.option.side : a.option.side, points, crossings: 0,
+      sourceSide: forward ? a.option.side : b.option.side, targetSide: forward ? b.option.side : a.option.side, points, crossings: compatibility.crossings,
       bends: Math.max(0, segments.length - 1), length: segments.reduce((sum, segment) => sum + manhattan(segment.a, segment.b), 0),
     });
   }
