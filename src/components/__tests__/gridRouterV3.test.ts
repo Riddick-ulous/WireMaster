@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { planBundleGridRoutesV3 } from '../gridBundleRouterV3';
-import { createVehicleStressRoutingFixture, measureVehicleRouting, withBundleCavityPermutation } from '../vehicleStressRoutingFixture';
+import { createVehicleStressRoutingFixture, measureVehicleRouting } from '../vehicleStressRoutingFixture';
 
 describe('grid bundle router V3 spike', () => {
   it('routes the vehicle fixture bundle-first and reports corridor progress', () => {
-    const fixture = withBundleCavityPermutation(createVehicleStressRoutingFixture());
+    const fixture = createVehicleStressRoutingFixture();
     const started = Date.now();
     const plan = planBundleGridRoutesV3(fixture.requests, fixture.obstacles, fixture.displayIds);
     const elapsedMs = Date.now() - started;
@@ -24,7 +24,7 @@ describe('grid bundle router V3 spike', () => {
   }, 5000);
 
   it('routes both first large endpoint groups instead of sacrificing the second bundle', () => {
-    const fixture = withBundleCavityPermutation(createVehicleStressRoutingFixture());
+    const fixture = createVehicleStressRoutingFixture();
     const c12 = fixture.bundles.find((bundle) => bundle.elementADisplayId === 'C1' && bundle.elementBDisplayId === 'C2')!;
     const c13 = fixture.bundles.find((bundle) => bundle.elementADisplayId === 'C1' && bundle.elementBDisplayId === 'C3')!;
     const plan = planBundleGridRoutesV3([...c12.requests, ...c13.requests], fixture.obstacles, fixture.displayIds);
@@ -35,7 +35,7 @@ describe('grid bundle router V3 spike', () => {
   }, 3000);
 
   it('classifies bundles that are intrinsically corridor-routable before global reservations', () => {
-    const fixture = withBundleCavityPermutation(createVehicleStressRoutingFixture());
+    const fixture = createVehicleStressRoutingFixture();
     const isolated = fixture.bundles.map((bundle) => {
       const plan = planBundleGridRoutesV3(bundle.requests, fixture.obstacles, fixture.displayIds);
       const routed = bundle.requests.filter((request) => plan.results.get(request.id)?.status === 'ROUTED').length;
