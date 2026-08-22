@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { planGridRoutesV3 } from '../gridRouterV3';
-import { createVehicleStressRoutingFixture, measureVehicleRouting } from '../vehicleStressRoutingFixture';
+import { createVehicleStressRoutingFixture, measureVehicleRouting, withBundleCavityPermutation } from '../vehicleStressRoutingFixture';
 
 describe('grid router V3 spike', () => {
-  it('routes the vehicle fixture bundle-first and reports routability/performance', () => {
-    const fixture = createVehicleStressRoutingFixture();
+  it('routes the vehicle fixture bundle-first with layout-only cavity permutation', () => {
+    const fixture = withBundleCavityPermutation(createVehicleStressRoutingFixture());
     const started = Date.now();
     const plan = planGridRoutesV3(fixture.requests, fixture.obstacles, fixture.displayIds);
     const elapsedMs = Date.now() - started;
     const metrics = measureVehicleRouting(fixture, plan.results, elapsedMs);
 
-    console.info(`[vehicle-routing-v3 grid] ${JSON.stringify(metrics)}`);
+    console.info(`[vehicle-routing-v3 grid+permutation] ${JSON.stringify(metrics)}`);
     expect(plan.bundleOrder).toHaveLength(50);
     expect(plan.bundleOrder[0].requests).toHaveLength(10);
     expect(plan.results.size).toBe(180);
