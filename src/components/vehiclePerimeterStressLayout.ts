@@ -23,11 +23,11 @@ type Placement = Pick<VehicleConnectorSpec, 'gridX' | 'gridY' | 'rotation'>;
 
 const placements: Record<string, Placement> = {
   // Top edge: horizontal connectors, exits point down into the workspace.
-  // C3 starts far enough from the corner that its first down-facing bundle
-  // portal is not behind C1's mandatory 112 px right-facing label exit.
-  C3: { gridX: 10, gridY: 0, rotation: 90 },
-  C4: { gridX: 39, gridY: 0, rotation: 90 },
-  C19: { gridX: 54, gridY: 0, rotation: 90 },
+  // Keep the first top block far enough from the left edge that a full-width
+  // C1->C3 bundle can clear C1's mandatory straight label exit before turning.
+  C3: { gridX: 11, gridY: 0, rotation: 90 },
+  C4: { gridX: 40, gridY: 0, rotation: 90 },
+  C19: { gridX: 55, gridY: 0, rotation: 90 },
   C20: { gridX: 69, gridY: 0, rotation: 90 },
   C5: { gridX: 91, gridY: 0, rotation: 90 },
   C7: { gridX: 115, gridY: 0, rotation: 90 },
