@@ -41,7 +41,9 @@ const placements: Record<string, Placement> = {
   C10: { gridX: 130, gridY: 127, rotation: 270 },
 
   // Left edge: vertical connectors, exits point right into the workspace.
-  C1: { gridX: 0, gridY: 8, rotation: 0 },
+  // C1 starts two grids below the nominal corner so the top-edge C3 down-stubs
+  // have a full 28 px elbow corridor outside C1's node clearance.
+  C1: { gridX: 0, gridY: 10, rotation: 0 },
   C11: { gridX: 0, gridY: 44, rotation: 0 },
   C29: { gridX: 0, gridY: 76, rotation: 0 },
 
