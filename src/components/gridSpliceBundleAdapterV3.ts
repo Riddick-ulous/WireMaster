@@ -392,17 +392,29 @@ export function finalizeGridSpliceBundleRoutesV3(
     let targetHandleId = result.targetHandleId;
     let sourceSide = result.sourceSide;
     let targetSide = result.targetSide;
+    let sourceJunctionBends = result.sourceJunctionBends ?? 0;
+    let targetJunctionBends = result.targetJunctionBends ?? 0;
     if (sourcePort) {
       points = [...sourcePort.internalPath, ...points.slice(1)];
       sourceHandleId = sourcePort.physical.key;
       sourceSide = sourcePort.physical.side;
+      sourceJunctionBends = Math.max(0, routeSegments(sourcePort.internalPath).length - 1);
     }
     if (targetPort) {
       points = [...points.slice(0, -1), ...targetPort.internalPath.slice().reverse()];
       targetHandleId = targetPort.physical.key;
       targetSide = targetPort.physical.side;
+      targetJunctionBends = Math.max(0, routeSegments(targetPort.internalPath).length - 1);
     }
-    finalized.set(requestId, recompute({ ...result, sourceHandleId, targetHandleId, sourceSide, targetSide }, points));
+    finalized.set(requestId, recompute({
+      ...result,
+      sourceHandleId,
+      targetHandleId,
+      sourceSide,
+      targetSide,
+      sourceJunctionBends,
+      targetJunctionBends,
+    }, points));
   }
   return finalized;
 }

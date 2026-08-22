@@ -197,6 +197,12 @@ describe('vehicle perimeter splice stress fixture', () => {
       expect(result.sourceHandleId.includes('|grid:')).toBe(false);
       expect(result.targetHandleId.includes('|grid:')).toBe(false);
     }
+    const s11UpperBranch = plan.results.get('VW024');
+    const s11LowerBranch = plan.results.get('VW113');
+    expect(s11UpperBranch?.status).toBe('ROUTED');
+    expect(s11LowerBranch?.status).toBe('ROUTED');
+    if (s11UpperBranch?.status === 'ROUTED') expect(s11UpperBranch.targetJunctionBends).toBe(2);
+    if (s11LowerBranch?.status === 'ROUTED') expect(s11LowerBranch.sourceJunctionBends).toBe(2);
 
     mkdirSync('artifacts/router-v3', { recursive: true });
     const svg = renderRouterDiagnosticSvg({

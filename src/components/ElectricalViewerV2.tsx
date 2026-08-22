@@ -112,7 +112,12 @@ function pointToward(from: RoutePoint, to: RoutePoint, distance: number): RouteP
   if (Math.abs(from.x - to.x) < 0.01) return { x: from.x, y: from.y + Math.sign(to.y - from.y) * distance };
   return { x: from.x + Math.sign(to.x - from.x) * distance, y: from.y };
 }
-function roundedPolylinePath(points: RoutePoint[], preferredRadius = 7): string {
+export function roundedPolylinePath(
+  points: RoutePoint[],
+  preferredRadius = 7,
+  sharpSourceBends = 0,
+  sharpTargetBends = 0,
+): string {
   if (points.length < 3) return polylinePath(points);
   let path = `M ${points[0].x} ${points[0].y}`;
   for (let index = 1; index < points.length - 1; index += 1) {
@@ -121,6 +126,11 @@ function roundedPolylinePath(points: RoutePoint[], preferredRadius = 7): string 
     const next = points[index + 1];
     const incoming = Math.abs(corner.x - previous.x) + Math.abs(corner.y - previous.y);
     const outgoing = Math.abs(next.x - corner.x) + Math.abs(next.y - corner.y);
+    const sharp = index <= sharpSourceBends || index >= points.length - 1 - sharpTargetBends;
+    if (sharp) {
+      path += ` L ${corner.x} ${corner.y}`;
+      continue;
+    }
     const radius = Math.min(preferredRadius, incoming / 3, outgoing / 3);
     const before = pointToward(corner, previous, radius);
     const after = pointToward(corner, next, radius);
@@ -153,7 +163,14 @@ function WireEdge({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targ
   let path: string;
   if (direct) path = `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
   else if (temporary || points.length < 2) path = temporaryPath(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition);
-  else path = routing === 'smooth' ? roundedPolylinePath(points) : polylinePath(points);
+  else path = routing === 'smooth'
+    ? roundedPolylinePath(
+      points,
+      7,
+      typeof data?.sourceJunctionBends === 'number' ? data.sourceJunctionBends : 0,
+      typeof data?.targetJunctionBends === 'number' ? data.targetJunctionBends : 0,
+    )
+    : polylinePath(points);
 
   const wireInfo = typeof data?.wireInfo === 'string' ? data.wireInfo : '';
   const sourceLabel = data?.sourceLabel as RenderLabel | undefined;
@@ -423,7 +440,7 @@ export function ElectricalViewer({ project, harnessId, selectedConnectorId, high
       type: 'wire-edge',
       animated: visual.highlighted && !anchorLead && !affected && !isDragging,
       style: { stroke: visual.color, strokeWidth: visual.highlighted ? 5 : anchorLead ? 2 : 2.5, opacity: affected ? 0.18 : visual.dimmedByNet ? 0.18 : isDragging ? 0.55 : 1, strokeDasharray: isDragging && !anchorLead ? '5 5' : undefined },
-      data: { netId: wire.netId, routing: wireRenderStyle, direct: anchorLead, temporary: isDragging && !anchorLead, points: result?.status === 'ROUTED' ? result.points : [], wireInfo: visual.text, sourceLabel: renderLabel(labels?.source), targetLabel: renderLabel(labels?.target), labelFill: visual.highlighted ? '#fff' : '#aeb8c6', labelOpacity: affected ? 0.2 : visual.dimmedByNet ? 0.22 : 0.9 },
+      data: { netId: wire.netId, routing: wireRenderStyle, direct: anchorLead, temporary: isDragging && !anchorLead, points: result?.status === 'ROUTED' ? result.points : [], sourceJunctionBends: result?.status === 'ROUTED' ? result.sourceJunctionBends ?? 0 : 0, targetJunctionBends: result?.status === 'ROUTED' ? result.targetJunctionBends ?? 0 : 0, wireInfo: visual.text, sourceLabel: renderLabel(labels?.source), targetLabel: renderLabel(labels?.target), labelFill: visual.highlighted ? '#fff' : '#aeb8c6', labelOpacity: affected ? 0.2 : visual.dimmedByNet ? 0.22 : 0.9 },
     } as Edge];
   }), [activeWires, isDragging, nodes, routingResults, spliceById, splicePreview, visuals, wireLabels, wireRenderStyle]);
 

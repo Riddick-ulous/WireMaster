@@ -40,6 +40,11 @@ export interface RoutedOrthogonalRoute {
   crossings: number;
   bends: number;
   length: number;
+  /** Number of already-grid-routed bends inside a source/target splice's
+   * controlled junction tree. The smooth renderer must keep these bends sharp
+   * so intentional same-net T-junctions do not look like wire crossings. */
+  sourceJunctionBends?: number;
+  targetJunctionBends?: number;
 }
 export interface UnroutedOrthogonalRoute { status: 'UNROUTED'; reason: 'NO_VALID_PATH' }
 export type OrthogonalRouteResult = RoutedOrthogonalRoute | UnroutedOrthogonalRoute;
