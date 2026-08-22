@@ -1,11 +1,11 @@
-import { planBundleAtomicGridRoutesV3, type BundleAtomicPlanV3 } from './gridBundleAtomicV3';
 import { inferGridAlignmentV3 } from './gridBundleRouterV3Splices';
 import { expandGridConnectorFanoutV3, finalizeGridConnectorFanoutRoutesV3 } from './gridConnectorFanoutV3';
+import { planGlobalBundleGridRoutesV3, type GlobalBundleGridPlanV3 } from './gridGlobalBundleRouterV3';
 import { expandGridSplicesBundleV3, finalizeGridSpliceBundleRoutesV3 } from './gridSpliceBundleAdapterV3';
 import type { ElementDisplayIds } from './routingBundles';
 import type { RouteObstacle, RouteRequest } from './routingGeometry';
 
-export interface FanoutBundlePlanV3 extends BundleAtomicPlanV3 {
+export interface FanoutBundlePlanV3 extends GlobalBundleGridPlanV3 {
   connectorFanouts: number;
 }
 
@@ -13,8 +13,11 @@ export interface FanoutBundlePlanV3 extends BundleAtomicPlanV3 {
  * Experimental V3 architecture:
  *
  * physical cavities -> local connector fanout -> bundle egresses
- * -> bundle-aware splice landing blocks -> bundle-atomic global routing
+ * -> bundle-aware splice landing blocks -> pure bundle-only global routing
  * -> restore connector fanout -> restore physical splice convergence.
+ *
+ * The global stage never protects individual cavity portals and never falls back
+ * to routing members of a multiwire bundle independently.
  */
 export function planBundleGridRoutesV3FanoutAtomicWithSplices(
   requests: RouteRequest[],
@@ -30,7 +33,7 @@ export function planBundleGridRoutesV3FanoutAtomicWithSplices(
     alignment,
     connectorNodeIds,
   );
-  const plan = planBundleAtomicGridRoutesV3(fanoutExpansion.requests, fanoutExpansion.obstacles, displayIds);
+  const plan = planGlobalBundleGridRoutesV3(fanoutExpansion.requests, fanoutExpansion.obstacles, displayIds);
   const withConnectorFanout = finalizeGridConnectorFanoutRoutesV3(plan.results, fanoutExpansion.geometries);
   const finalized = finalizeGridSpliceBundleRoutesV3(withConnectorFanout, spliceExpansion.geometries);
   return {
