@@ -43,6 +43,30 @@ export interface ConnectorFanoutExpansionV3 {
   geometries: Map<string, ConnectorFanoutGeometryV3>;
 }
 
+/**
+ * Tapered apron represented as narrow hard keepouts over the actual local
+ * fanout segments. Unlike one large rectangle this protects every cavity lead
+ * and turn lane without cutting away the unused wedges between them.
+ */
+export function connectorFanoutKeepoutsV3(geometry: ConnectorFanoutGeometryV3): RouteObstacle[] {
+  const thickness = 2;
+  return geometry.ports.flatMap((port) => routeSegments(port.internalPath).map((segment, index): RouteObstacle => {
+    const horizontal = segment.orientation === 'h';
+    const minX = Math.min(segment.a.x, segment.b.x);
+    const minY = Math.min(segment.a.y, segment.b.y);
+    return {
+      id: `grid-connector-fanout-apron-${geometry.nodeId}-${port.requestId}-${port.end}-${index}`,
+      nodeId: geometry.nodeId,
+      kind: 'node',
+      x: horizontal ? minX : minX - thickness / 2,
+      y: horizontal ? minY - thickness / 2 : minY,
+      width: horizontal ? Math.max(thickness, Math.abs(segment.b.x - segment.a.x)) : thickness,
+      height: horizontal ? thickness : Math.max(thickness, Math.abs(segment.b.y - segment.a.y)),
+      clearance: 0,
+    };
+  }));
+}
+
 function numericCompare(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 }
