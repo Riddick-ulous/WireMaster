@@ -1,0 +1,18 @@
+.viewer-splice.label-right .splice-tag,
+.viewer-splice.label-left .splice-tag {
+  top: auto;
+  bottom: 8px;
+  transform: none;
+}
+
+.viewer-splice.label-top .splice-tag,
+.viewer-splice.label-bottom .splice-tag {
+  left: auto;
+  right: 8px;
+  transform: none;
+}
+
+.viewer-splice.label-right .splice-tag { left: 17px; }
+.viewer-splice.label-left .splice-tag { right: 17px; }
+.viewer-splice.label-top .splice-tag { bottom: 17px; }
+.viewer-splice.label-bottom .splice-tag { top: 17px; }

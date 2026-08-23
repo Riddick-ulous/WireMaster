@@ -1,0 +1,659 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-266 -403 6776 6580" width="6776" height="6580">
+<defs><pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M 28 0 L 0 0 0 28" fill="none" stroke="#e5e7eb" stroke-width="1"/></pattern></defs>
+<rect x="-266" y="-403" width="6776" height="6580" fill="#ffffff"/>
+<rect x="-266" y="-403" width="6776" height="6580" fill="url(#grid)"/>
+<style>
+    .node{fill:#f8fafc;stroke:#475569;stroke-width:3}.node-critical{fill:#fff7ed;stroke:#dc2626;stroke-width:5}
+    .label-obstacle{fill:#f1f5f9;stroke:#cbd5e1;stroke-width:1}.route{fill:none;stroke:#475569;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}
+    .route-muted{fill:none;stroke:#cbd5e1;stroke-width:2}.route-focus{fill:none;stroke:#2563eb;stroke-width:5}.unrouted{fill:none;stroke:#dc2626;stroke-width:4;stroke-dasharray:14 10}
+    .critical{fill:#dc2626;stroke:#ffffff;stroke-width:3}.bundle-warning{fill:#fff7ed;stroke:#dc2626;stroke-width:2}.text{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;fill:#0f172a}.small{font-size:18px}.title{font-size:30px;font-weight:700}.warning{fill:#b91c1c;font-weight:700}
+  </style>
+<text class="text title" x="-242" y="-361">WireMaster Router V3 · exact viewer input · selective C2 tapered apron · routed 164/180</text>
+<rect class="node" x="0" y="364" width="180" height="1263" rx="8"/>
+<text class="text small" x="10" y="388">C1</text>
+<rect class="node" x="5936" y="364" width="180" height="1291" rx="8"/>
+<text class="text small" x="5946" y="388">C2</text>
+<rect class="node-critical" x="420" y="0" width="1036" height="123" rx="8"/>
+<text class="text small" x="430" y="24">C3  !1</text>
+<rect class="node-critical" x="1568" y="0" width="560" height="123" rx="8"/>
+<text class="text small" x="1578" y="24">C4  !2</text>
+<rect class="node" x="3612" y="0" width="728" height="123" rx="8"/>
+<text class="text small" x="3622" y="24">C5</text>
+<rect class="node-critical" x="3668" y="5824" width="784" height="123" rx="8"/>
+<text class="text small" x="3678" y="5848">C6  !5</text>
+<rect class="node" x="4452" y="0" width="532" height="123" rx="8"/>
+<text class="text small" x="4462" y="24">C7</text>
+<rect class="node-critical" x="5096" y="0" width="588" height="123" rx="8"/>
+<text class="text small" x="5106" y="24">C8  !1</text>
+<rect class="node" x="4564" y="5824" width="504" height="123" rx="8"/>
+<text class="text small" x="4574" y="5848">C9</text>
+<rect class="node" x="5180" y="5824" width="532" height="123" rx="8"/>
+<text class="text small" x="5190" y="5848">C10</text>
+<rect class="node" x="0" y="1764" width="180" height="1039" rx="8"/>
+<text class="text small" x="10" y="1788">C11</text>
+<rect class="node" x="0" y="2940" width="180" height="423" rx="8"/>
+<text class="text small" x="10" y="2964">C12</text>
+<rect class="node" x="2044" y="5824" width="588" height="123" rx="8"/>
+<text class="text small" x="2054" y="5848">C13</text>
+<rect class="node" x="2744" y="5824" width="392" height="123" rx="8"/>
+<text class="text small" x="2754" y="5848">C14</text>
+<rect class="node" x="420" y="5824" width="812" height="123" rx="8"/>
+<text class="text small" x="430" y="5848">C15</text>
+<rect class="node" x="1344" y="5824" width="588" height="123" rx="8"/>
+<text class="text small" x="1354" y="5848">C16</text>
+<rect class="node" x="3248" y="5824" width="308" height="123" rx="8"/>
+<text class="text small" x="3258" y="5848">C17</text>
+<rect class="node" x="0" y="3500" width="180" height="367" rx="8"/>
+<text class="text small" x="10" y="3524">C18</text>
+<rect class="node" x="2240" y="0" width="476" height="123" rx="8"/>
+<text class="text small" x="2250" y="24">C19</text>
+<rect class="node-critical" x="2828" y="0" width="672" height="123" rx="8"/>
+<text class="text small" x="2838" y="24">C20  !1</text>
+<rect class="node-critical" x="5936" y="1792" width="180" height="339" rx="8"/>
+<text class="text small" x="5946" y="1816">C21  !1</text>
+<rect class="node-critical" x="5936" y="2268" width="180" height="395" rx="8"/>
+<text class="text small" x="5946" y="2292">C22  !1</text>
+<rect class="node" x="5936" y="2800" width="180" height="395" rx="8"/>
+<text class="text small" x="5946" y="2824">C23</text>
+<rect class="node" x="5936" y="3332" width="180" height="423" rx="8"/>
+<text class="text small" x="5946" y="3356">C24</text>
+<rect class="node" x="5936" y="3892" width="180" height="283" rx="8"/>
+<text class="text small" x="5946" y="3916">C25</text>
+<rect class="node" x="5936" y="4312" width="180" height="311" rx="8"/>
+<text class="text small" x="5946" y="4336">C26</text>
+<rect class="node" x="5936" y="4760" width="180" height="339" rx="8"/>
+<text class="text small" x="5946" y="4784">C27</text>
+<rect class="node" x="5936" y="5236" width="180" height="339" rx="8"/>
+<text class="text small" x="5946" y="5260">C28</text>
+<rect class="node" x="0" y="4004" width="180" height="731" rx="8"/>
+<text class="text small" x="10" y="4028">C29</text>
+<rect class="node" x="0" y="4872" width="180" height="479" rx="8"/>
+<text class="text small" x="10" y="4896">C30</text>
+<rect class="node-critical" x="236" y="1355" width="12" height="12" rx="8"/>
+<text class="text small" x="246" y="1379">S1  !1</text>
+<rect class="node-critical" x="5868" y="1355" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="1379">S2  !1</text>
+<rect class="node" x="1156" y="179" width="12" height="12" rx="8"/>
+<text class="text small" x="1166" y="203">S3</text>
+<rect class="node" x="1884" y="235" width="12" height="12" rx="8"/>
+<text class="text small" x="1894" y="259">S4</text>
+<rect class="node-critical" x="4152" y="235" width="12" height="12" rx="8"/>
+<text class="text small" x="4162" y="259">S5  !2</text>
+<rect class="node" x="4320" y="5700" width="12" height="12" rx="8"/>
+<text class="text small" x="4330" y="5724">S6</text>
+<rect class="node" x="4740" y="179" width="12" height="12" rx="8"/>
+<text class="text small" x="4750" y="203">S7</text>
+<rect class="node-critical" x="5524" y="235" width="12" height="12" rx="8"/>
+<text class="text small" x="5534" y="259">S8  !1</text>
+<rect class="node-critical" x="4936" y="5700" width="12" height="12" rx="8"/>
+<text class="text small" x="4946" y="5724">S9  !2</text>
+<rect class="node-critical" x="5552" y="5700" width="12" height="12" rx="8"/>
+<text class="text small" x="5562" y="5724">S10  !3</text>
+<rect class="node-critical" x="292" y="2167" width="12" height="12" rx="8"/>
+<text class="text small" x="302" y="2191">S11  !1</text>
+<rect class="node" x="292" y="3063" width="12" height="12" rx="8"/>
+<text class="text small" x="302" y="3087">S12</text>
+<rect class="node" x="2276" y="5756" width="12" height="12" rx="8"/>
+<text class="text small" x="2286" y="5780">S13</text>
+<rect class="node" x="2808" y="5756" width="12" height="12" rx="8"/>
+<text class="text small" x="2818" y="5780">S14</text>
+<rect class="node" x="932" y="5756" width="12" height="12" rx="8"/>
+<text class="text small" x="942" y="5780">S15</text>
+<rect class="node" x="1548" y="5700" width="12" height="12" rx="8"/>
+<text class="text small" x="1558" y="5724">S16</text>
+<rect class="node" x="3284" y="5700" width="12" height="12" rx="8"/>
+<text class="text small" x="3294" y="5724">S17</text>
+<rect class="node" x="236" y="3595" width="12" height="12" rx="8"/>
+<text class="text small" x="246" y="3619">S18</text>
+<rect class="node-critical" x="2528" y="179" width="12" height="12" rx="8"/>
+<text class="text small" x="2538" y="203">S19  !1</text>
+<rect class="node-critical" x="3228" y="179" width="12" height="12" rx="8"/>
+<text class="text small" x="3238" y="203">S20  !1</text>
+<rect class="node" x="5868" y="1943" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="1967">S21</text>
+<rect class="node" x="5868" y="2475" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="2499">S22</text>
+<rect class="node" x="5868" y="2895" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="2919">S23</text>
+<rect class="node" x="5812" y="3455" width="12" height="12" rx="8"/>
+<text class="text small" x="5822" y="3479">S24</text>
+<rect class="node" x="5868" y="3987" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="4011">S25</text>
+<rect class="node" x="5868" y="4407" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="4431">S26</text>
+<rect class="node" x="5868" y="4855" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="4879">S27</text>
+<rect class="node" x="5868" y="5331" width="12" height="12" rx="8"/>
+<text class="text small" x="5878" y="5355">S28</text>
+<rect class="node" x="292" y="4239" width="12" height="12" rx="8"/>
+<text class="text small" x="302" y="4263">S29</text>
+<rect class="node" x="292" y="4995" width="12" height="12" rx="8"/>
+<text class="text small" x="302" y="5019">S30</text>
+<rect class="node" x="1212" y="1775" width="12" height="12" rx="8"/>
+<text class="text small" x="1222" y="1799">S31</text>
+<rect class="node" x="2136" y="1775" width="12" height="12" rx="8"/>
+<text class="text small" x="2146" y="1799">S32</text>
+<rect class="node-critical" x="3060" y="1775" width="12" height="12" rx="8"/>
+<text class="text small" x="3070" y="1799">S33  !2</text>
+<rect class="node" x="3984" y="1775" width="12" height="12" rx="8"/>
+<text class="text small" x="3994" y="1799">S34</text>
+<rect class="node-critical" x="4908" y="1775" width="12" height="12" rx="8"/>
+<text class="text small" x="4918" y="1799">S35  !2</text>
+<rect class="node" x="1212" y="4155" width="12" height="12" rx="8"/>
+<text class="text small" x="1222" y="4179">S36</text>
+<rect class="node-critical" x="2136" y="4155" width="12" height="12" rx="8"/>
+<text class="text small" x="2146" y="4179">S37  !1</text>
+<rect class="node-critical" x="3060" y="4155" width="12" height="12" rx="8"/>
+<text class="text small" x="3070" y="4179">S38  !1</text>
+<rect class="node" x="3984" y="4155" width="12" height="12" rx="8"/>
+<text class="text small" x="3994" y="4179">S39</text>
+<rect class="node-critical" x="4908" y="4155" width="12" height="12" rx="8"/>
+<text class="text small" x="4918" y="4179">S40  !1</text>
+<rect class="node" x="187" y="1343" width="43" height="17" rx="8"/>
+<text class="text small" x="197" y="1367">vehicle-s01-splice-label</text>
+<rect class="node" x="5886" y="1343" width="43" height="17" rx="8"/>
+<text class="text small" x="5896" y="1367">vehicle-s02-splice-label</text>
+<rect class="node" x="1118" y="156" width="43" height="17" rx="8"/>
+<text class="text small" x="1128" y="180">vehicle-s03-splice-label</text>
+<rect class="node" x="1846" y="212" width="43" height="17" rx="8"/>
+<text class="text small" x="1856" y="236">vehicle-s04-splice-label</text>
+<rect class="node" x="4114" y="212" width="43" height="17" rx="8"/>
+<text class="text small" x="4124" y="236">vehicle-s05-splice-label</text>
+<rect class="node" x="4282" y="5718" width="43" height="17" rx="8"/>
+<text class="text small" x="4292" y="5742">vehicle-s06-splice-label</text>
+<rect class="node" x="4702" y="156" width="43" height="17" rx="8"/>
+<text class="text small" x="4712" y="180">vehicle-s07-splice-label</text>
+<rect class="node" x="5486" y="212" width="43" height="17" rx="8"/>
+<text class="text small" x="5496" y="236">vehicle-s08-splice-label</text>
+<rect class="node" x="4898" y="5718" width="43" height="17" rx="8"/>
+<text class="text small" x="4908" y="5742">vehicle-s09-splice-label</text>
+<rect class="node" x="5509" y="5718" width="48" height="17" rx="8"/>
+<text class="text small" x="5519" y="5742">vehicle-s10-splice-label</text>
+<rect class="node" x="238" y="2155" width="48" height="17" rx="8"/>
+<text class="text small" x="248" y="2179">vehicle-s11-splice-label</text>
+<rect class="node" x="238" y="3051" width="48" height="17" rx="8"/>
+<text class="text small" x="248" y="3075">vehicle-s12-splice-label</text>
+<rect class="node" x="2233" y="5774" width="48" height="17" rx="8"/>
+<text class="text small" x="2243" y="5798">vehicle-s13-splice-label</text>
+<rect class="node" x="2765" y="5774" width="48" height="17" rx="8"/>
+<text class="text small" x="2775" y="5798">vehicle-s14-splice-label</text>
+<rect class="node" x="889" y="5774" width="48" height="17" rx="8"/>
+<text class="text small" x="899" y="5798">vehicle-s15-splice-label</text>
+<rect class="node" x="1505" y="5718" width="48" height="17" rx="8"/>
+<text class="text small" x="1515" y="5742">vehicle-s16-splice-label</text>
+<rect class="node" x="3241" y="5718" width="48" height="17" rx="8"/>
+<text class="text small" x="3251" y="5742">vehicle-s17-splice-label</text>
+<rect class="node" x="182" y="3583" width="48" height="17" rx="8"/>
+<text class="text small" x="192" y="3607">vehicle-s18-splice-label</text>
+<rect class="node" x="2485" y="156" width="48" height="17" rx="8"/>
+<text class="text small" x="2495" y="180">vehicle-s19-splice-label</text>
+<rect class="node" x="3185" y="156" width="48" height="17" rx="8"/>
+<text class="text small" x="3195" y="180">vehicle-s20-splice-label</text>
+<rect class="node" x="5886" y="1931" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="1955">vehicle-s21-splice-label</text>
+<rect class="node" x="5886" y="2463" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="2487">vehicle-s22-splice-label</text>
+<rect class="node" x="5886" y="2883" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="2907">vehicle-s23-splice-label</text>
+<rect class="node" x="5830" y="3443" width="48" height="17" rx="8"/>
+<text class="text small" x="5840" y="3467">vehicle-s24-splice-label</text>
+<rect class="node" x="5886" y="3975" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="3999">vehicle-s25-splice-label</text>
+<rect class="node" x="5886" y="4395" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="4419">vehicle-s26-splice-label</text>
+<rect class="node" x="5886" y="4843" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="4867">vehicle-s27-splice-label</text>
+<rect class="node" x="5886" y="5319" width="48" height="17" rx="8"/>
+<text class="text small" x="5896" y="5343">vehicle-s28-splice-label</text>
+<rect class="node" x="238" y="4227" width="48" height="17" rx="8"/>
+<text class="text small" x="248" y="4251">vehicle-s29-splice-label</text>
+<rect class="node" x="238" y="4983" width="48" height="17" rx="8"/>
+<text class="text small" x="248" y="5007">vehicle-s30-splice-label</text>
+<rect class="node" x="1230" y="1763" width="48" height="17" rx="8"/>
+<text class="text small" x="1240" y="1787">vehicle-s31-splice-label</text>
+<rect class="node" x="2154" y="1763" width="48" height="17" rx="8"/>
+<text class="text small" x="2164" y="1787">vehicle-s32-splice-label</text>
+<rect class="node" x="3078" y="1763" width="48" height="17" rx="8"/>
+<text class="text small" x="3088" y="1787">vehicle-s33-splice-label</text>
+<rect class="node" x="4002" y="1763" width="48" height="17" rx="8"/>
+<text class="text small" x="4012" y="1787">vehicle-s34-splice-label</text>
+<rect class="node" x="4926" y="1763" width="48" height="17" rx="8"/>
+<text class="text small" x="4936" y="1787">vehicle-s35-splice-label</text>
+<rect class="node" x="1230" y="4143" width="48" height="17" rx="8"/>
+<text class="text small" x="1240" y="4167">vehicle-s36-splice-label</text>
+<rect class="node" x="2154" y="4143" width="48" height="17" rx="8"/>
+<text class="text small" x="2164" y="4167">vehicle-s37-splice-label</text>
+<rect class="node" x="3078" y="4143" width="48" height="17" rx="8"/>
+<text class="text small" x="3088" y="4167">vehicle-s38-splice-label</text>
+<rect class="node" x="4002" y="4143" width="48" height="17" rx="8"/>
+<text class="text small" x="4012" y="4167">vehicle-s39-splice-label</text>
+<rect class="node" x="4926" y="4143" width="48" height="17" rx="8"/>
+<text class="text small" x="4936" y="4167">vehicle-s40-splice-label</text>
+<rect class="label-obstacle" x="5844" y="475" width="88" height="17" rx="2"/>
+<rect class="label-obstacle" x="5844" y="503" width="88" height="17" rx="2"/>
+<rect class="label-obstacle" x="5844" y="531" width="88" height="17" rx="2"/>
+<rect class="label-obstacle" x="5844" y="559" width="88" height="17" rx="2"/>
+<rect class="label-obstacle" x="5844" y="587" width="88" height="17" rx="2"/>
+<rect class="label-obstacle" x="5844" y="615" width="88" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="559" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="587" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="615" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="643" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="671" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="699" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="391" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="419" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="447" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="475" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="503" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="659" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="687" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="715" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="743" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="5839" y="1035" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="5839" y="1063" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="5839" y="1091" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="3739" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3767" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3823" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3851" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3879" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3907" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3776" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3804" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3860" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3888" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="3916" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="184" y="867" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="895" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="923" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="951" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="979" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1007" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="5839" y="1875" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1875" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1903" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1931" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1959" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="3123" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="696" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="724" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="2040" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="2068" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="2096" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="5839" y="783" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="5839" y="811" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="5839" y="839" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="5839" y="867" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="528" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="556" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="584" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="612" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="640" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="2152" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="2180" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="416" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="444" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="472" y="5727" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="939" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="967" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="995" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="1583" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="1611" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="184" y="2015" width="93" height="17" rx="2"/>
+<rect class="label-obstacle" x="4607" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="4635" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="5251" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="5279" y="127" width="17" height="93" rx="2"/>
+<rect class="label-obstacle" x="5307" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4672" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4700" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4728" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4756" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5260" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5288" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5316" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5344" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="184" y="2295" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="4047" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4075" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5363" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5391" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="184" y="4899" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="4168" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4196" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4812" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4840" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5400" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5428" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="184" y="5039" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="4927" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1147" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1175" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="1340" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1368" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1396" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="519" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="547" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="575" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="603" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="799" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="827" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="855" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="883" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1667" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1695" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1723" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1751" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="1975" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2255" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2283" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2311" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3319" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2367" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2395" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2423" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2843" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2871" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2899" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2927" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="2983" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3011" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3039" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3067" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3627" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3655" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3683" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4467" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4495" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4523" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4551" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5111" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5139" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5167" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5195" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="184" y="755" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="671" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="783" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="699" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="811" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="727" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1063" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="4115" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1091" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="4143" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="391" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="3963" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="419" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="3991" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="923" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="4056" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="951" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="4084" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="979" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="4112" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="1147" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="780" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="1175" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="808" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="435" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="184" y="4031" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="463" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="184" y="4059" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="3664" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4560" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3692" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4588" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3720" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4616" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="3972" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5176" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4000" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5204" y="5722" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="4831" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="1819" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="4859" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="3919" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5615" y="127" width="17" height="98" rx="2"/>
+<rect class="label-obstacle" x="5834" y="2379" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="2267" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="1847" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1791" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="2295" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="184" y="1819" width="98" height="17" rx="2"/>
+<rect class="label-obstacle" x="5834" y="2323" width="98" height="17" rx="2"/>
+<polyline class="unrouted" points="236,1361 5868,1361"><title>6dde0f52-ec47-4e5a-8755-801eae5fd82f · UNROUTED</title></polyline>
+<circle class="critical" cx="236" cy="1361" r="8"/><circle class="critical" cx="5868" cy="1361" r="8"/>
+<polyline class="route" points="248,1361 276,1361 276,1417 574,1417 574,1585 5334,1585 5334,493 5936,493"><title>f25a897d-7268-47d0-befe-974b02201c26 · 7004px · 6 bends</title></polyline>
+<polyline class="route" points="248,1361 276,1361 276,1389 602,1389 602,1557 5306,1557 5306,521 5936,521"><title>514fe8b6-9b46-4978-b4c8-28c56f0b3805 · 6920px · 6 bends</title></polyline>
+<polyline class="route" points="248,1361 630,1361 630,1529 5278,1529 5278,549 5936,549"><title>2db14d0c-4934-4805-b531-bfbeb9cf30c7 · 6836px · 4 bends</title></polyline>
+<polyline class="route" points="248,1361 276,1361 276,1333 658,1333 658,1501 5250,1501 5250,577 5936,577"><title>84115476-fedf-49f4-8d60-e0801fbf81f0 · 6808px · 6 bends</title></polyline>
+<polyline class="route" points="248,1361 276,1361 276,1305 686,1305 686,1473 5222,1473 5222,605 5936,605"><title>a4c1253b-377b-4a93-8644-d043b107593c · 6780px · 6 bends</title></polyline>
+<polyline class="route" points="248,1361 276,1361 276,1277 714,1277 714,1445 5194,1445 5194,633 5936,633"><title>06f20f66-1b6a-4973-8b7c-9df89594fbf9 · 6752px · 6 bends</title></polyline>
+<polyline class="route" points="5868,1361 5840,1361 5840,1277 5166,1277 5166,577 180,577"><title>82143b13-180e-4689-a765-54774c4cdd0e · 6472px · 4 bends</title></polyline>
+<polyline class="route" points="5868,1361 5840,1361 5840,1305 5138,1305 5138,605 180,605"><title>9a47c17b-e9fb-4c8b-9a84-cda392ffedef · 6444px · 4 bends</title></polyline>
+<polyline class="route" points="5868,1361 5840,1361 5840,1333 5110,1333 5110,633 180,633"><title>eaf289b2-18df-4c66-828c-dc3dc46b3538 · 6416px · 4 bends</title></polyline>
+<polyline class="route" points="5868,1361 5082,1361 5082,661 180,661"><title>2dfd8eb2-53c1-4586-8d3b-a4cd44fde162 · 6388px · 2 bends</title></polyline>
+<polyline class="route" points="5868,1361 5840,1361 5840,1389 5054,1389 5054,689 180,689"><title>8cbbee83-20d5-4f5e-8ea2-615cf7343667 · 6416px · 4 bends</title></polyline>
+<polyline class="route" points="5868,1361 5840,1361 5840,1417 5026,1417 5026,717 180,717"><title>a0bc4c4d-a5f6-4868-be53-c97d121ad83c · 6444px · 4 bends</title></polyline>
+<polyline class="route" points="1162,191 1162,219 1078,219 1078,409 180,409"><title>b0486f3b-ebfd-4c1c-9d2a-5b91740f5c10 · 1200px · 3 bends</title></polyline>
+<polyline class="route" points="1162,191 1162,219 1106,219 1106,437 180,437"><title>84448949-5632-48f0-9dcb-ee9866256bc0 · 1228px · 3 bends</title></polyline>
+<polyline class="route" points="1162,191 1162,219 1134,219 1134,465 180,465"><title>a102a5b3-c4d6-4686-b431-5ddb81885104 · 1256px · 3 bends</title></polyline>
+<polyline class="route" points="1162,191 1162,493 180,493"><title>379f8caf-3f13-4d57-9bca-92e54139c631 · 1284px · 1 bends</title></polyline>
+<polyline class="route" points="1162,191 1162,219 1190,219 1190,521 180,521"><title>ed6cae13-7f41-46a2-98c4-8ce2048a4140 · 1368px · 3 bends</title></polyline>
+<polyline class="route" points="1890,247 1890,275 1918,275 1918,465 1722,465 1722,381 658,381 658,123"><title>978c1c53-ae65-4fd4-97bd-61014f042b1e · 1848px · 6 bends</title></polyline>
+<polyline class="route" points="1890,247 1890,437 1750,437 1750,353 686,353 686,123"><title>0383da3f-7f9e-4d41-afc0-9cc1d8eb00c2 · 1708px · 4 bends</title></polyline>
+<polyline class="route" points="1890,247 1890,275 1862,275 1862,409 1778,409 1778,325 714,325 714,123"><title>14620e9a-0e3c-4cd5-91cf-c1e0bba883d1 · 1624px · 6 bends</title></polyline>
+<polyline class="route" points="1890,247 1890,275 1834,275 1834,381 1806,381 1806,297 742,297 742,123"><title>40662fb7-0b74-4a29-b642-fb0032e40cf9 · 1540px · 6 bends</title></polyline>
+<polyline class="route" points="4326,5700 4326,5672 4354,5672 4354,2733 5698,2733 5698,1053 5936,1053"><title>5e0d8d67-d332-41ae-9e2d-3edc38a072a9 · 6257px · 5 bends</title></polyline>
+<polyline class="route" points="4326,5700 4326,2705 5670,2705 5670,1081 5936,1081"><title>20cc31f7-6ef0-42bb-9fe9-fe673d3c2c7d · 6229px · 3 bends</title></polyline>
+<polyline class="route" points="4326,5700 4326,5672 4298,5672 4298,2677 5642,2677 5642,1109 5936,1109"><title>6ae49601-2788-4f59-9aac-55b1d4bdbba7 · 6257px · 5 bends</title></polyline>
+<polyline class="route" points="4746,191 4746,521 3738,521 3738,123"><title>ec0157b8-a175-46e7-b036-00ba075a82da · 1736px · 2 bends</title></polyline>
+<polyline class="route" points="4746,191 4746,219 4718,219 4718,493 3766,493 3766,123"><title>a8a1b453-1977-4d40-8002-d43b4423bd77 · 1652px · 4 bends</title></polyline>
+<polyline class="route" points="5530,247 5530,275 5558,275 5558,465 3822,465 3822,123"><title>6b8e82a3-42a5-4ac4-a84d-b28f0a8d209e · 2324px · 4 bends</title></polyline>
+<polyline class="route" points="5530,247 5530,437 3850,437 3850,123"><title>d023dd99-1907-4f65-85c0-9dddf4bf7ff7 · 2184px · 2 bends</title></polyline>
+<polyline class="route" points="5530,247 5530,275 5502,275 5502,409 3878,409 3878,123"><title>2cdbaef3-44db-4eaa-80f1-a1e3afb1fc42 · 2100px · 4 bends</title></polyline>
+<polyline class="route" points="5530,247 5530,275 5474,275 5474,381 3906,381 3906,123"><title>9e71fc0d-97e6-44fe-bfe1-de2cb45e058c · 2016px · 4 bends</title></polyline>
+<polyline class="unrouted" points="4936,5706 3794,5824"><title>72078390-8cca-42b4-a6d5-24547d761b29 · UNROUTED</title></polyline>
+<circle class="critical" cx="4936" cy="5706" r="8"/><circle class="critical" cx="3794" cy="5824" r="8"/>
+<polyline class="unrouted" points="4936,5706 3822,5824"><title>f9ff7dd0-c512-4281-9881-6ae90c3c6f40 · UNROUTED</title></polyline>
+<circle class="critical" cx="4936" cy="5706" r="8"/><circle class="critical" cx="3822" cy="5824" r="8"/>
+<polyline class="unrouted" points="5552,5706 3878,5824"><title>69c5daa6-6ef9-42f3-803a-78b098864015 · UNROUTED</title></polyline>
+<circle class="critical" cx="5552" cy="5706" r="8"/><circle class="critical" cx="3878" cy="5824" r="8"/>
+<polyline class="unrouted" points="5552,5706 3906,5824"><title>ce80e300-ba7a-4c60-9c53-dc29719220cd · UNROUTED</title></polyline>
+<circle class="critical" cx="5552" cy="5706" r="8"/><circle class="critical" cx="3906" cy="5824" r="8"/>
+<polyline class="unrouted" points="5552,5706 3934,5824"><title>ef913514-0255-4b8b-a10e-0f5256f6ed9f · UNROUTED</title></polyline>
+<circle class="critical" cx="5552" cy="5706" r="8"/><circle class="critical" cx="3934" cy="5824" r="8"/>
+<polyline class="route" points="304,2173 332,2173 332,2229 546,2229 546,885 180,885"><title>7587a167-b29d-439c-8bdb-594468f7969d · 2008px · 4 bends</title></polyline>
+<polyline class="route" points="304,2173 332,2173 332,2201 518,2201 518,913 180,913"><title>7d4a0cfc-b7aa-4b7f-afbf-b9009866937e · 1868px · 4 bends</title></polyline>
+<polyline class="route" points="304,2173 490,2173 490,941 180,941"><title>fa10a901-bade-4000-b60f-2f0f24cd53c6 · 1728px · 2 bends</title></polyline>
+<polyline class="route" points="304,2173 332,2173 332,2145 462,2145 462,969 180,969"><title>d2061236-3f53-4843-be95-3e52555e19f1 · 1644px · 4 bends</title></polyline>
+<polyline class="route" points="304,2173 332,2173 332,2117 434,2117 434,997 180,997"><title>36b863e8-6e70-4c91-9ce2-267704ed22d8 · 1560px · 4 bends</title></polyline>
+<polyline class="route" points="304,2173 332,2173 332,2089 406,2089 406,1025 180,1025"><title>77ad4354-1bfb-4314-8a93-7a6dc31efaab · 1476px · 4 bends</title></polyline>
+<polyline class="unrouted" points="292,2173 5936,1893"><title>cb8e3770-8da1-4030-87ee-e75f2e9ccd95 · UNROUTED</title></polyline>
+<circle class="critical" cx="292" cy="2173" r="8"/><circle class="critical" cx="5936" cy="1893" r="8"/>
+<polyline class="route" points="304,3069 332,3069 332,3125 658,3125 658,1893 180,1893"><title>7553f0b8-60b7-4873-8a9f-876fcbd8e3fa · 2120px · 4 bends</title></polyline>
+<polyline class="route" points="304,3069 332,3069 332,3097 630,3097 630,1921 180,1921"><title>7eb98971-673a-459d-ae47-12a6ff9c8a76 · 1980px · 4 bends</title></polyline>
+<polyline class="route" points="304,3069 602,3069 602,1949 180,1949"><title>a5e560be-92fd-4322-8575-9d3c3f343b40 · 1840px · 2 bends</title></polyline>
+<polyline class="route" points="304,3069 332,3069 332,3041 574,3041 574,1977 180,1977"><title>55c68fe0-2b42-4ec1-842c-b790df99dfac · 1756px · 4 bends</title></polyline>
+<polyline class="route" points="304,3069 332,3069 332,3013 434,3013 434,2901 -126,2901 -126,-123 2758,-123 2758,269 3122,269 3122,123"><title>86754486-2320-4c5d-b648-25fc5a1631b3 · 7668px · 9 bends</title></polyline>
+<polyline class="route" points="2282,5756 2282,5617 2002,5617 2002,5757 1470,5757 1470,5617 714,5617 714,5824"><title>9ef66e38-7667-444a-8cd2-c450dffed09d · 2194px · 6 bends</title></polyline>
+<polyline class="route" points="2282,5756 2282,5728 2254,5728 2254,5645 2030,5645 2030,5785 1442,5785 1442,5645 742,5645 742,5824"><title>1ff4157f-67e2-4445-82d6-72d7b74e224a · 2110px · 8 bends</title></polyline>
+<polyline class="route" points="2814,5756 2814,5728 2842,5728 2842,5533 2058,5533 2058,5824"><title>78f0d15a-d4eb-4c45-a3e0-64b31937641f · 1326px · 4 bends</title></polyline>
+<polyline class="route" points="2814,5756 2814,5561 2086,5561 2086,5824"><title>a5780eae-7d81-45b1-877e-be30a172af14 · 1186px · 2 bends</title></polyline>
+<polyline class="route" points="2814,5756 2814,5728 2786,5728 2786,5589 2114,5589 2114,5824"><title>c8c21226-5163-4cea-a2c4-ba7095d2c94b · 1102px · 4 bends</title></polyline>
+<polyline class="route" points="938,5756 938,5728 966,5728 966,5449 5530,5449 5530,801 5936,801"><title>2818bb21-77e6-4627-a9b2-4cdc2665bf2b · 9953px · 5 bends</title></polyline>
+<polyline class="route" points="938,5756 938,5421 5502,5421 5502,829 5936,829"><title>9652df77-5693-47db-aa50-a0b5c7dad159 · 9925px · 3 bends</title></polyline>
+<polyline class="route" points="938,5756 938,5728 910,5728 910,5393 5474,5393 5474,857 5936,857"><title>138e837a-911d-47ea-ae16-a3e51442b458 · 9953px · 5 bends</title></polyline>
+<polyline class="route" points="938,5756 938,5728 882,5728 882,5365 5446,5365 5446,885 5936,885"><title>0e6ea8d1-0553-4520-95be-1ece0e1c2576 · 9981px · 5 bends</title></polyline>
+<polyline class="route" points="1554,5700 1554,5672 1610,5672 1610,5477 546,5477 546,5824"><title>77aa5b6d-ad3f-4076-a41f-dc89a1a805dd · 1690px · 4 bends</title></polyline>
+<polyline class="route" points="1554,5700 1554,5672 1582,5672 1582,5505 574,5505 574,5824"><title>f3348c66-f47d-4e5c-8f37-8963e4891df6 · 1550px · 4 bends</title></polyline>
+<polyline class="route" points="1554,5700 1554,5533 602,5533 602,5824"><title>a95375c2-745f-4b46-9a05-fd41fb8817cb · 1410px · 2 bends</title></polyline>
+<polyline class="route" points="1554,5700 1554,5672 1526,5672 1526,5561 630,5561 630,5824"><title>ffb75cd5-ebe9-4056-a549-9a0b5e4fb46a · 1326px · 4 bends</title></polyline>
+<polyline class="route" points="1554,5700 1554,5672 1498,5672 1498,5589 658,5589 658,5824"><title>3d55a896-1180-4b51-ab2e-82861775556a · 1242px · 4 bends</title></polyline>
+<polyline class="route" points="3290,5700 3290,5477 2170,5477 2170,5824"><title>3907f853-2ae6-4b89-b648-227919b0ffa5 · 1690px · 2 bends</title></polyline>
+<polyline class="route" points="3290,5700 3290,5672 3262,5672 3262,5505 2198,5505 2198,5824"><title>fc6c4389-db1c-49be-b7ba-43405e46e74f · 1606px · 4 bends</title></polyline>
+<polyline class="route" points="248,3601 276,3601 276,3629 462,3629 462,5057 434,5057 434,5824"><title>4b57b5f4-f373-4b0b-9d29-902ee4f91fed · 2465px · 5 bends</title></polyline>
+<polyline class="route" points="248,3601 490,3601 490,5085 462,5085 462,5824"><title>34b5134f-ff33-4dc5-ada2-b5a4782ea972 · 2493px · 3 bends</title></polyline>
+<polyline class="route" points="248,3601 276,3601 276,3573 518,3573 518,5113 490,5113 490,5824"><title>54618d0b-03cc-44dd-94b9-da09428dbf0b · 2577px · 5 bends</title></polyline>
+<polyline class="route" points="2534,191 2534,219 2478,219 2478,549 938,549 938,123"><title>c72da9b4-08b3-424c-ae9a-0b95ca2990db · 2380px · 4 bends</title></polyline>
+<polyline class="route" points="2534,191 2534,219 2506,219 2506,353 2730,353 2730,-39 406,-39 406,269 966,269 966,123"><title>4c68a26e-a37d-41e4-83e2-af420207cecc · 4144px · 8 bends</title></polyline>
+<polyline class="unrouted" points="2528,185 994,123"><title>3634967b-41b4-4c0d-ab95-01a6593832a6 · UNROUTED</title></polyline>
+<circle class="critical" cx="2528" cy="185" r="8"/><circle class="critical" cx="994" cy="123" r="8"/>
+<polyline class="route" points="3234,191 3234,219 3262,219 3262,521 1582,521 1582,123"><title>c65b08d0-bda0-4131-a295-832242b2e90d · 2436px · 4 bends</title></polyline>
+<polyline class="route" points="3234,191 3234,493 1610,493 1610,123"><title>3704cf4f-6425-4925-ac8f-f78146dcc9ee · 2296px · 2 bends</title></polyline>
+<polyline class="route" points="3234,191 3234,219 3178,219 3178,325 2814,325 2814,-95 -14,-95 -14,1641 322,1641 322,2033 180,2033"><title>6bee28f6-f8e4-4745-8c4c-231b8e4bc990 · 6408px · 9 bends</title></polyline>
+<polyline class="route" points="5868,1949 4606,1949 4606,123"><title>2db7adee-bb1d-4d57-9eaa-42e401b031ee · 3088px · 1 bends</title></polyline>
+<polyline class="route" points="5868,1949 5840,1949 5840,1921 4634,1921 4634,123"><title>03b2ba8e-a813-42b0-a4fc-222aff3a2075 · 3060px · 3 bends</title></polyline>
+<polyline class="route" points="5868,2481 5840,2481 5840,2509 5782,2509 5810,2509 5810,2425 5726,2425 5726,2173 6146,2173 6146,-39 5082,-39 5082,269 5250,269 5250,123"><title>5bc17594-fc71-44da-a5ac-0ad939006182 · 4880px · 12 bends</title></polyline>
+<polyline class="route" points="5868,2481 5782,2481 5782,2453 5754,2453 5754,2201 6174,2201 6174,-67 5054,-67 5054,297 5278,297 5278,123"><title>f664155f-81ac-40f8-bc2f-98a6469244db · 4964px · 9 bends</title></polyline>
+<polyline class="route" points="5868,2481 5840,2481 5840,2453 5754,2453 5754,2481 5782,2481 5782,2229 6202,2229 6202,-95 5026,-95 5026,325 5306,325 5306,123"><title>dfa3310b-916e-49f3-9bcc-7d68666dedc9 · 5272px · 11 bends</title></polyline>
+<polyline class="route" points="5868,2901 5840,2901 5840,2845 4690,2845 4690,5824"><title>634b9703-df41-4cf9-9d6d-f502156caf1a · 4213px · 3 bends</title></polyline>
+<polyline class="route" points="5868,2901 5840,2901 5840,2873 4718,2873 4718,5824"><title>746ddc2e-90c3-4307-8daf-d895316a8758 · 4129px · 3 bends</title></polyline>
+<polyline class="route" points="5868,2901 4746,2901 4746,5824"><title>61377315-3cc4-4f0a-ba72-5a9820a6be1b · 4045px · 1 bends</title></polyline>
+<polyline class="route" points="5868,2901 5840,2901 5840,2929 4774,2929 4774,5824"><title>fc746dd0-0fdc-44f1-8223-d4cda9f298f2 · 4017px · 3 bends</title></polyline>
+<polyline class="route" points="5812,3461 5784,3461 5784,3433 5642,3433 5642,5477 5278,5477 5278,5824"><title>8fabbb58-9b41-4bc1-bb56-27af54f79d95 · 2953px · 5 bends</title></polyline>
+<polyline class="route" points="5812,3461 5670,3461 5670,5505 5306,5505 5306,5824"><title>f86a0694-2503-4020-b130-8888cf560d24 · 2869px · 3 bends</title></polyline>
+<polyline class="route" points="5812,3461 5784,3461 5784,3489 5698,3489 5698,5533 5334,5533 5334,5824"><title>5b49aa6a-b5bc-4c58-81dc-572514493509 · 2841px · 5 bends</title></polyline>
+<polyline class="route" points="5812,3461 5784,3461 5784,3517 5726,3517 5726,5561 5362,5561 5362,5824"><title>bb968c7d-1433-4d18-9406-493c2e3c0e8d · 2813px · 5 bends</title></polyline>
+<polyline class="route" points="5812,3461 5784,3461 5784,3405 3542,3405 3542,2313 180,2313"><title>d31a58b1-da89-4c34-8045-66ca5da64c7d · 6780px · 4 bends</title></polyline>
+<polyline class="route" points="5868,3993 5840,3993 5840,3965 5754,3965 5754,3853 6230,3853 6230,-179 4438,-179 4438,157 4102,157 4102,269 4046,269 4046,123"><title>e2619b13-b6a8-483f-82aa-a21db17a4936 · 7540px · 11 bends</title></polyline>
+<polyline class="route" points="5868,3993 5754,3993 5754,4189 6258,4189 6258,-207 3598,-207 3598,297 4074,297 4074,123"><title>5b7ffae6-c8c5-4bb8-8525-b1a6ef53aa0c · 9024px · 7 bends</title></polyline>
+<polyline class="route" points="5868,4413 5840,4413 5840,4385 5754,4385 5754,4273 6286,4273 6286,297 5586,297 5586,185 5474,185 5474,269 5362,269 5362,123"><title>190cd37a-6064-4c91-82ad-e06eab8668c3 · 6028px · 11 bends</title></polyline>
+<polyline class="route" points="5868,4413 5754,4413 5754,4637 6314,4637 6314,325 5922,325 5922,353 5390,353 5390,123"><title>62b52998-de09-4432-b580-0beb7029a7aa · 6392px · 7 bends</title></polyline>
+<polyline class="route" points="5868,4413 5840,4413 5840,4441 4158,4441 4158,4917 180,4917"><title>d6ad2116-696a-4c71-be02-64610735716e · 6192px · 4 bends</title></polyline>
+<polyline class="route" points="5868,4861 5840,4861 5840,4805 4186,4805 4186,5824"><title>bcb1363e-69f8-4e72-9ddd-a701b5bb65f0 · 2757px · 3 bends</title></polyline>
+<polyline class="route" points="5868,4861 5840,4861 5840,4833 4214,4833 4214,5824"><title>f7a89501-e6be-455c-810e-3ceadba14fc8 · 2673px · 3 bends</title></polyline>
+<polyline class="route" points="5868,4861 4830,4861 4830,5824"><title>ced032f3-06c9-44aa-a4f0-a2de9398746b · 2001px · 1 bends</title></polyline>
+<polyline class="route" points="5868,4861 5840,4861 5840,4889 4858,4889 4858,5824"><title>7191b4c8-2ff5-4b8a-a67b-8df9d4fa105b · 1973px · 3 bends</title></polyline>
+<polyline class="route" points="5868,5337 5754,5337 5754,5589 5418,5589 5418,5824"><title>af14d573-a78f-4177-adc5-ff4a4bd41463 · 937px · 3 bends</title></polyline>
+<polyline class="route" points="5868,5337 5840,5337 5840,5365 5782,5365 5782,5617 5446,5617 5446,5824"><title>33ab00d5-cf23-4aef-b4a1-1bda8d031aea · 909px · 5 bends</title></polyline>
+<polyline class="route" points="5868,5337 5840,5337 5840,5309 5614,5309 5614,5281 406,5281 406,5057 180,5057"><title>28d948d1-58e8-4214-835f-3f67b4b46cb5 · 5968px · 6 bends</title></polyline>
+<polyline class="route" points="5868,5337 5840,5337 5840,5281 5754,5281 5754,4945 5936,4945"><title>4efda48e-4032-429d-a867-e335bab20053 · 688px · 4 bends</title></polyline>
+<polyline class="route" points="304,4245 770,4245 770,1165 180,1165"><title>5f5f4eab-d74e-436f-a296-7c680c565ac4 · 4136px · 2 bends</title></polyline>
+<polyline class="route" points="304,4245 332,4245 332,4217 742,4217 742,1193 180,1193"><title>13c03d25-0562-4e9a-9a56-c62fc0facff8 · 4052px · 4 bends</title></polyline>
+<polyline class="route" points="304,5001 332,5001 332,5029 1358,5029 1358,5824"><title>65815cf8-e8f2-4946-b8e8-a38d39249243 · 1877px · 3 bends</title></polyline>
+<polyline class="route" points="304,5001 1386,5001 1386,5824"><title>a263ce69-40b0-4cb3-ba92-e4d87f4f5441 · 1905px · 1 bends</title></polyline>
+<polyline class="route" points="304,5001 332,5001 332,4973 1414,4973 1414,5824"><title>f27ff127-dc36-4d01-9245-ce88e8958d97 · 1989px · 3 bends</title></polyline>
+<polyline class="route" points="1218,1775 1218,1747 1274,1747 1274,521 1218,521 1218,219 1162,219 1162,191"><title>e2c4b1ad-7a7c-4f8b-93a0-a5899a6e917e · 1752px · 6 bends</title></polyline>
+<polyline class="route" points="1218,1775 1218,1747 1246,1747 1246,857 518,857 518,123"><title>94887869-ba05-42b6-b226-0c354f760718 · 2408px · 4 bends</title></polyline>
+<polyline class="route" points="1218,1775 1218,745 546,745 546,123"><title>f58460f5-1d0f-4476-a652-fd715baf6bdb · 2324px · 2 bends</title></polyline>
+<polyline class="route" points="1218,1775 1218,1747 1190,1747 1190,1137 574,1137 574,123"><title>c4a05315-030a-4b50-99bf-0fe4abd928ce · 2296px · 4 bends</title></polyline>
+<polyline class="route" points="1218,1775 1218,1747 1162,1747 1162,1109 602,1109 602,123"><title>b4956ec6-3b0e-4f22-94d6-f176ab44abe2 · 2268px · 4 bends</title></polyline>
+<polyline class="route" points="2142,1775 2142,1747 2198,1747 2198,1641 1554,1641 1554,493 1246,493 1246,219 1162,219 1162,191"><title>07b497fa-8a48-40f7-9052-cb7066f7240f · 2676px · 8 bends</title></polyline>
+<polyline class="route" points="2142,1775 2142,1747 2086,1747 2086,1417 798,1417 798,123"><title>090ff0c2-4332-4703-b15d-1000642c5b1b · 2996px · 4 bends</title></polyline>
+<polyline class="route" points="2142,1775 2142,1747 2114,1747 2114,1389 826,1389 826,123"><title>61929e28-ba0c-4af9-87b9-9d21edfc6a8f · 2968px · 4 bends</title></polyline>
+<polyline class="route" points="2142,1775 2142,1361 854,1361 854,123"><title>25654674-ea46-42f8-98ce-3cefc73b2102 · 2940px · 2 bends</title></polyline>
+<polyline class="route" points="2142,1775 2142,1747 2170,1747 2170,1333 882,1333 882,123"><title>83f26df1-1a33-4dd2-9df6-7ffa5757848e · 2968px · 4 bends</title></polyline>
+<polyline class="route" points="3066,1775 3066,1747 3122,1747 3122,1137 1946,1137 1946,275 1890,275 1890,247"><title>a0d16d37-4206-4837-a84d-ae8a15f764ab · 2816px · 6 bends</title></polyline>
+<polyline class="route" points="3066,1775 3066,1747 3094,1747 3094,1613 2198,1613 2198,1305 1666,1305 1666,123"><title>d6631a23-40ca-41c5-8861-d139a3f6a68e · 3108px · 6 bends</title></polyline>
+<polyline class="route" points="3066,1775 3066,1641 2338,1641 2338,1221 1694,1221 1694,123"><title>10f725ad-9e03-44c6-956c-275e08e574ce · 3024px · 4 bends</title></polyline>
+<polyline class="unrouted" points="3060,1781 1722,123"><title>13b2180e-652d-469c-bd42-1c14d9e2cfb8 · UNROUTED</title></polyline>
+<circle class="critical" cx="3060" cy="1781" r="8"/><circle class="critical" cx="1722" cy="123" r="8"/>
+<polyline class="unrouted" points="3060,1781 1750,123"><title>7fa09b0a-7e15-4549-8545-6be71780e0b5 · UNROUTED</title></polyline>
+<circle class="critical" cx="3060" cy="1781" r="8"/><circle class="critical" cx="1750" cy="123" r="8"/>
+<polyline class="route" points="3984,1781 3956,1781 3956,1725 3850,1725 3850,1137 3570,1137 3570,-67 2226,-67 2226,269 1974,269 1974,123"><title>c027162f-230f-4d9e-be90-f8e242c0cf77 · 4340px · 9 bends</title></polyline>
+<polyline class="route" points="3990,1775 3990,1109 2562,1109 2562,219 2534,219 2534,191"><title>fbae2ee8-a797-46b2-a168-6aaef0d1a9a9 · 3040px · 4 bends</title></polyline>
+<polyline class="route" points="3984,1781 3956,1781 3956,1809 3766,1809 3766,1305 2254,1305 2254,123"><title>b320a193-7919-4045-96f8-234bebe3533d · 3444px · 5 bends</title></polyline>
+<polyline class="route" points="3984,1781 3794,1781 3794,1277 2282,1277 2282,123"><title>63d51bfe-6925-4f32-8121-e8cce2ff9199 · 3360px · 3 bends</title></polyline>
+<polyline class="route" points="3984,1781 3956,1781 3956,1753 3822,1753 3822,1249 2310,1249 2310,123"><title>d5b41b6d-ec65-4989-94c1-e4f9025e09d9 · 3332px · 5 bends</title></polyline>
+<polyline class="unrouted" points="4908,1781 3228,185"><title>e1829d5d-b270-450e-952b-1e80cb307ec8 · UNROUTED</title></polyline>
+<circle class="critical" cx="4908" cy="1781" r="8"/><circle class="critical" cx="3228" cy="185" r="8"/>
+<polyline class="unrouted" points="4908,1781 3318,123"><title>75a9df1f-5b46-4c28-b237-854758e30cb5 · UNROUTED</title></polyline>
+<circle class="critical" cx="4908" cy="1781" r="8"/><circle class="critical" cx="3318" cy="123" r="8"/>
+<polyline class="route" points="4908,1781 4718,1781 4718,1221 2366,1221 2366,123"><title>7f1e8c02-54a4-4bbb-8ae8-753506fed238 · 4200px · 3 bends</title></polyline>
+<polyline class="route" points="4908,1781 4880,1781 4880,1753 4746,1753 4746,1193 2394,1193 2394,123"><title>41d36d94-e03a-4d23-835b-a59117599b90 · 4172px · 5 bends</title></polyline>
+<polyline class="route" points="4908,1781 4880,1781 4880,1725 4774,1725 4774,1165 2422,1165 2422,123"><title>51acd011-a90e-492f-ab1b-bfe4e334452e · 4144px · 5 bends</title></polyline>
+<polyline class="route" points="1218,4155 1218,4127 1274,4127 1274,4021 2954,4021 2954,3909 3206,3909 3206,219 3234,219 3234,191"><title>ce68e8d5-48ea-49bf-9e6a-6406d4259d46 · 5980px · 8 bends</title></polyline>
+<polyline class="route" points="1218,4155 1218,4127 1162,4127 1162,3909 2842,3909 2842,123"><title>a6162a74-2df6-4949-82df-e4cb21663de6 · 5768px · 4 bends</title></polyline>
+<polyline class="route" points="1218,4155 1218,4127 1190,4127 1190,3937 2870,3937 2870,123"><title>72cb8d27-e3a0-4fd4-ab5b-6c88e0594695 · 5740px · 4 bends</title></polyline>
+<polyline class="route" points="1218,4155 1218,3965 2898,3965 2898,123"><title>56b42c34-e9c9-4c23-912c-2ff6949fd728 · 5712px · 2 bends</title></polyline>
+<polyline class="route" points="1218,4155 1218,4127 1246,4127 1246,3993 2926,3993 2926,123"><title>aea24c58-6fe4-4970-810a-9eb6082e7701 · 5740px · 4 bends</title></polyline>
+<polyline class="unrouted" points="2136,4161 4152,241"><title>5c24cc19-bfdd-470b-8ff7-7e43b915d761 · UNROUTED</title></polyline>
+<circle class="critical" cx="2136" cy="4161" r="8"/><circle class="critical" cx="4152" cy="241" r="8"/>
+<polyline class="route" points="2142,4155 2142,4127 2086,4127 2086,3797 2226,3797 2226,1333 2982,1333 2982,123"><title>3cd0c727-cf39-4981-90db-9d3565d4872b · 4984px · 6 bends</title></polyline>
+<polyline class="route" points="2142,4155 2142,4127 2114,4127 2114,3825 2254,3825 2254,1361 3010,1361 3010,123"><title>63fdfadb-d8ed-4fd1-98f5-1f79cdfe081e · 4956px · 6 bends</title></polyline>
+<polyline class="route" points="2142,4155 2142,3853 2282,3853 2282,1389 3038,1389 3038,123"><title>882c9b8c-a99d-4231-a1ed-20bbe407421e · 4928px · 4 bends</title></polyline>
+<polyline class="route" points="2142,4155 2142,4127 2170,4127 2170,3881 2310,3881 2310,1417 3066,1417 3066,123"><title>b6528c20-0b83-441e-b163-fff3e1d31c7c · 4956px · 6 bends</title></polyline>
+<polyline class="unrouted" points="3060,4161 4152,241"><title>78e9a2bd-7745-452a-add0-90fd656da67e · UNROUTED</title></polyline>
+<circle class="critical" cx="3060" cy="4161" r="8"/><circle class="critical" cx="4152" cy="241" r="8"/>
+<polyline class="route" points="3066,4155 3066,4127 3010,4127 3010,3937 3626,3937 3626,123"><title>2f18cd40-e61b-42c5-ba64-22a7197273c6 · 4704px · 4 bends</title></polyline>
+<polyline class="route" points="3066,4155 3066,4127 3038,4127 3038,3965 3654,3965 3654,123"><title>9616caaf-f2be-4e20-88bc-7fb55b63ade9 · 4676px · 4 bends</title></polyline>
+<polyline class="route" points="3066,4155 3066,4127 3122,4127 3122,4021 3766,4021 3766,2649 4410,2649 4410,325 4690,325 4690,219 4746,219 4746,191"><title>2470c055-876b-48a9-a03e-ce7aa9612b14 · 5644px · 10 bends</title></polyline>
+<polyline class="route" points="3066,4155 3066,3993 3682,3993 3682,123"><title>71468bbc-d201-43f4-9c8c-fb0212ea2e77 · 4648px · 2 bends</title></polyline>
+<polyline class="route" points="3990,4155 3990,4127 4046,4127 4046,4021 4074,4021 4074,1697 4830,1697 4830,325 4774,325 4774,219 4746,219 4746,191"><title>67d8500a-cd9f-4149-b28c-79391179ef9e · 4888px · 10 bends</title></polyline>
+<polyline class="route" points="3990,4155 3990,4127 3934,4127 3934,3909 4466,3909 4466,123"><title>a20dfdd1-a27e-47dd-99dc-fc46c099b1fd · 4620px · 4 bends</title></polyline>
+<polyline class="route" points="3990,4155 3990,4127 3962,4127 3962,3937 4494,3937 4494,123"><title>f5aba93d-776f-4f01-9b5b-60cb87aa1e80 · 4592px · 4 bends</title></polyline>
+<polyline class="route" points="3990,4155 3990,3965 4522,3965 4522,123"><title>83f89d48-34fa-4dde-9a4a-19209c4fcbe7 · 4564px · 2 bends</title></polyline>
+<polyline class="route" points="3990,4155 3990,4127 4018,4127 4018,3993 4550,3993 4550,123"><title>2606a34d-72c6-4899-92d5-d4f4492de782 · 4592px · 4 bends</title></polyline>
+<polyline class="unrouted" points="4908,4161 5524,241"><title>7d01faeb-bd92-4a36-838c-792f88e8f34f · UNROUTED</title></polyline>
+<circle class="critical" cx="4908" cy="4161" r="8"/><circle class="critical" cx="5524" cy="241" r="8"/>
+<polyline class="route" points="4914,4155 4914,4127 4942,4127 4942,3993 4998,3993 4998,1697 4886,1697 4886,549 5110,549 5110,123"><title>5cd4755a-8051-4e9b-ba0e-8cddfaed7640 · 4452px · 8 bends</title></polyline>
+<polyline class="route" points="4914,4155 4914,3993 4802,3993 4802,521 5138,521 5138,123"><title>37237638-e2b6-4b10-ab37-c740d4e00abc · 4480px · 4 bends</title></polyline>
+<polyline class="route" points="4914,4155 4914,4127 4886,4127 4886,4021 4662,4021 4662,1137 4774,1137 4774,493 5166,493 5166,123"><title>3326cd74-fa94-43e5-8d4e-ac3b8a15a7e6 · 4788px · 8 bends</title></polyline>
+<polyline class="route" points="4914,4155 4914,4127 4858,4127 4858,2649 4690,2649 4690,353 5194,353 5194,123"><title>04bf7bcc-96bf-456b-a14a-f1367afd87b6 · 4760px · 6 bends</title></polyline>
+<polyline class="route" points="180,773 4998,773 4998,1613 5362,1613 5362,689 5936,689"><title>818a0a01-ea62-4d53-b668-3dacd8e9486c · 7520px · 4 bends</title></polyline>
+<polyline class="route" points="180,801 4970,801 4970,1641 5390,1641 5390,717 5936,717"><title>2b9390e4-1919-4f72-990d-a0993603c026 · 7520px · 4 bends</title></polyline>
+<polyline class="route" points="180,829 4942,829 4942,1669 5418,1669 5418,745 5936,745"><title>2c8b2fe2-bdfd-4848-a4eb-66f15f0c2365 · 7520px · 4 bends</title></polyline>
+<polyline class="route" points="180,1081 378,1081 378,1725 -14,1725 -14,3937 350,3937 350,4161 180,4161"><title>cb4e0ddb-52d9-4fa9-80df-3f494d851c44 · 4204px · 6 bends</title></polyline>
+<polyline class="route" points="180,1109 350,1109 350,1697 -42,1697 -42,3965 322,3965 322,4133 180,4133"><title>3595b3d9-2c0b-4968-8d75-f66dd0c25183 · 4092px · 6 bends</title></polyline>
+<polyline class="route" points="5936,409 5782,409 5782,-123 4382,-123 4382,353 3962,353 3962,123"><title>041fbae2-e131-4e01-84ae-521c15f03baf · 3212px · 5 bends</title></polyline>
+<polyline class="route" points="5936,437 5810,437 5810,-151 4354,-151 4354,325 3990,325 3990,123"><title>6af66dc5-1f82-434a-9a9f-23462db3cbfd · 3212px · 5 bends</title></polyline>
+<polyline class="route" points="5936,941 5614,941 5614,2817 4634,2817 4634,5533 4130,5533 4130,5824"><title>a44aeaee-4b43-4d4d-b67b-69f28f253246 · 6689px · 5 bends</title></polyline>
+<polyline class="route" points="5936,969 5586,969 5586,2789 4606,2789 4606,5505 4102,5505 4102,5824"><title>319468a0-61a1-4430-9f96-155f144bf335 · 6689px · 5 bends</title></polyline>
+<polyline class="route" points="5936,997 5558,997 5558,2761 4578,2761 4578,5477 4074,5477 4074,5824"><title>167d63a9-2493-42cf-878c-aa7261e1fad8 · 6689px · 5 bends</title></polyline>
+<polyline class="route" points="5936,1165 5754,1165 5754,1893 3738,1893 3738,5337 826,5337 826,5824"><title>e6737da8-1cd2-41a3-85fc-aec9cf049249 · 9769px · 5 bends</title></polyline>
+<polyline class="route" points="5936,1193 5726,1193 5726,1865 3710,1865 3710,5309 798,5309 798,5824"><title>061f8351-bad1-4350-a980-ec51117ef8f8 · 9769px · 5 bends</title></polyline>
+<polyline class="route" points="434,123 434,297 -98,297 -98,3909 378,3909 378,4049 180,4049"><title>4187f9b6-7bdc-4d82-bd79-e90c9176d6fe · 5132px · 5 bends</title></polyline>
+<polyline class="route" points="462,123 462,325 -70,325 -70,3881 406,3881 406,4077 180,4077"><title>c91a63b7-7bf9-4275-9094-0a1bed2ede9d · 5188px · 5 bends</title></polyline>
+<polyline class="route" points="3682,5824 3682,5673 3654,5673 3654,5981 4494,5981 4494,5617 4634,5617 4634,5824"><title>ad4f5c22-f3af-478d-b7ec-50a007b31b20 · 2038px · 6 bends</title></polyline>
+<polyline class="route" points="3710,5824 3710,5645 3626,5645 3626,6009 4522,6009 4522,5645 4606,5645 4606,5824"><title>ec74f5f6-5302-46ac-8f35-c42f817a64eb · 2150px · 6 bends</title></polyline>
+<polyline class="route" points="3738,5824 3738,5617 3598,5617 3598,6037 4550,6037 4550,5673 4578,5673 4578,5824"><title>e2488ae1-7355-4945-8ad1-13a9bc95ab1e · 2262px · 6 bends</title></polyline>
+<polyline class="route" points="3990,5824 3990,5561 5222,5561 5222,5824"><title>f8afa7cb-e17b-4c19-990a-6a8657d14ba6 · 1758px · 2 bends</title></polyline>
+<polyline class="route" points="4018,5824 4018,5589 5194,5589 5194,5824"><title>dcc8efad-9a6f-40a2-90a8-c3ebb07bae6d · 1646px · 2 bends</title></polyline>
+<polyline class="route" points="4830,123 4830,269 4998,269 4998,-235 6342,-235 6342,1753 5782,1753 5782,1837 5936,1837"><title>2e38fecc-f45d-4592-a0d7-f84045945287 · 4948px · 7 bends</title></polyline>
+<polyline class="route" points="4858,123 4858,297 4410,297 4410,-263 6370,-263 6370,3825 5782,3825 5782,3937 5936,3937"><title>fcd2551b-8805-484e-ac5a-4d42c69cd6b4 · 8084px · 7 bends</title></polyline>
+<polyline class="unrouted" points="5614,123 5936,2397"><title>41dfffc7-ed63-4b77-9b56-8ed4ef28b38a · UNROUTED</title></polyline>
+<circle class="critical" cx="5614" cy="123" r="8"/><circle class="critical" cx="5936" cy="2397" r="8"/>
+<polyline class="route" points="180,2285 5418,2285 5418,1977 5782,1977 5782,1865 5936,1865"><title>f630deee-0596-4e93-9526-fdf96ee67176 · 6176px · 4 bends</title></polyline>
+<polyline class="route" points="180,1809 3598,1809 3598,2313 5936,2313"><title>b3426f3f-82c0-4943-a8bc-018fa8d8509d · 6260px · 2 bends</title></polyline>
+<polyline class="route" points="180,1837 3570,1837 3570,2341 5936,2341"><title>a011e108-06ea-4117-b929-8ecfc1f9a195 · 6260px · 2 bends</title></polyline>
+<rect class="bundle-warning" x="2312" y="927" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="2384" y="950">C4-S33 2/4</text>
+<text class="text small warning" x="-242" y="-325">UNROUTED: C4-S33 2/4</text>
+<rect class="bundle-warning" x="1675" y="129" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="1747" y="152">C3-S19 2/3</text>
+<text class="text small warning" x="-242" y="-301">UNROUTED: C3-S19 2/3</text>
+<rect class="bundle-warning" x="4657" y="5740" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="4729" y="5763">C6-S10 0/3</text>
+<text class="text small warning" x="-242" y="-277">UNROUTED: C6-S10 0/3</text>
+<rect class="bundle-warning" x="4300" y="5740" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="4372" y="5763">C6-S9 0/2</text>
+<text class="text small warning" x="-242" y="-253">UNROUTED: C6-S9 0/2</text>
+<rect class="bundle-warning" x="5703" y="1235" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="5775" y="1258">C8-C22 0/1</text>
+<text class="text small warning" x="-242" y="-229">UNROUTED: C8-C22 0/1</text>
+<rect class="bundle-warning" x="4041" y="927" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="4113" y="950">C20-S35 0/1</text>
+<text class="text small warning" x="-242" y="-205">UNROUTED: C20-S35 0/1</text>
+<rect class="bundle-warning" x="3042" y="2008" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="3114" y="2031">C21-S11 0/1</text>
+<text class="text small warning" x="-242" y="-181">UNROUTED: C21-S11 0/1</text>
+<rect class="bundle-warning" x="2980" y="1336" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="3052" y="1359">S1-S2 0/1</text>
+<text class="text small warning" x="-242" y="-157">UNROUTED: S1-S2 0/1</text>
+<rect class="bundle-warning" x="3072" y="2176" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="3144" y="2199">S5-S37 0/1</text>
+<text class="text small warning" x="-242" y="-133">UNROUTED: S5-S37 0/1</text>
+<rect class="bundle-warning" x="3534" y="2176" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="3606" y="2199">S5-S38 0/1</text>
+<text class="text small warning" x="-242" y="-109">UNROUTED: S5-S38 0/1</text>
+<rect class="bundle-warning" x="5144" y="2176" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="5216" y="2199">S8-S40 0/1</text>
+<text class="text small warning" x="-242" y="-85">UNROUTED: S8-S40 0/1</text>
+<rect class="bundle-warning" x="3996" y="958" width="144" height="34" rx="5"/>
+<text class="text small warning" text-anchor="middle" x="4068" y="981">S20-S35 0/1</text>
+<text class="text small warning" x="-242" y="-61">UNROUTED: S20-S35 0/1</text>
+<text class="text small" x="-242" y="6153">routed 164/180 · grid 28px · generated from router data</text>
+</svg>

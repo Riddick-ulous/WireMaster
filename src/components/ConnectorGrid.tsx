@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TabulatorFull as Tabulator } from 'tabulator-tables';
-import type { ConnectorInstance, Net, UUID } from '../core/model';
+import type { ConnectorInstance, Net, SpliceInstance, UUID, WireEndpoint, WireInstance } from '../core/model';
 import type { PinEdit } from '../core/project';
 
 interface GridRow {
@@ -8,50 +8,102 @@ interface GridRow {
   cavity: string;
   pinName: string;
   net: string;
+  splice: string;
+  spliceIds: UUID[];
 }
 
 type EditableGridField = 'pinName' | 'net';
 
 interface Props {
   connector: ConnectorInstance;
+  connectors: ConnectorInstance[];
   nets: Net[];
+  splices: SpliceInstance[];
+  wires: WireInstance[];
   selected: boolean;
   onSelect: () => void;
   onRename: (label: string) => void;
+  onDelete: () => void;
   onEditPin: (pinId: UUID, patch: { pinName?: string; netName?: string }) => void;
   onBulkEditPins: (edits: PinEdit[]) => void;
+  onCreateSplice: (pinId: UUID) => void;
+  onEditSplice: (spliceId: UUID) => void;
 }
 
-function rowsFor(connector: ConnectorInstance, nets: Net[]): GridRow[] {
-  return connector.pins.map((pin) => ({
-    id: pin.id,
-    cavity: pin.cavity,
-    pinName: pin.pinName,
-    net: nets.find((net) => net.id === pin.netId)?.name ?? '',
-  }));
+function connectorSplices(connector: ConnectorInstance, splices: SpliceInstance[]): SpliceInstance[] {
+  const pinOrder = new Map(connector.pins.map((pin, index) => [pin.id, index]));
+  return splices
+    .filter((splice) => splice.placement === 'CONNECTOR'
+      && splice.ownerConnectorId === connector.id
+      && splice.status !== 'ORPHANED')
+    .slice()
+    .sort((left, right) => (pinOrder.get(left.anchorPinId ?? '') ?? Number.MAX_SAFE_INTEGER)
+      - (pinOrder.get(right.anchorPinId ?? '') ?? Number.MAX_SAFE_INTEGER)
+      || left.displayId.localeCompare(right.displayId, undefined, { numeric: true }));
+}
+
+function rowsFor(connector: ConnectorInstance, nets: Net[], splices: SpliceInstance[]): GridRow[] {
+  const nearSplices = connectorSplices(connector, splices);
+  return connector.pins.map((pin) => {
+    const anchored = nearSplices.filter((splice) => splice.anchorPinId === pin.id);
+    return {
+      id: pin.id,
+      cavity: pin.cavity,
+      pinName: pin.pinName,
+      net: nets.find((net) => net.id === pin.netId)?.name ?? '',
+      splice: anchored.length ? anchored.map((splice) => splice.displayId).join(', ') : pin.netId ? 'Add…' : '',
+      spliceIds: anchored.map((splice) => splice.id),
+    };
+  });
 }
 
 function rowsEqual(left: GridRow, right: GridRow): boolean {
   return left.id === right.id
     && left.cavity === right.cavity
     && left.pinName === right.pinName
-    && left.net === right.net;
+    && left.net === right.net
+    && left.splice === right.splice
+    && left.spliceIds.join('|') === right.spliceIds.join('|');
 }
 
 function parseClipboardTsv(text: string): string[][] {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const rows = normalized.split('\n');
-  // Excel/Calc normally put one trailing line break on copied cell ranges.
   if (rows.at(-1) === '') rows.pop();
   return rows.map((row) => row.split('\t'));
 }
 
-export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, onEditPin, onBulkEditPins }: Props) {
+function endpointLabel(endpoint: WireEndpoint, connectors: ConnectorInstance[], splices: SpliceInstance[]): string {
+  if (endpoint.kind === 'splice') {
+    const splice = splices.find((item) => item.id === endpoint.spliceId);
+    return splice?.displayId ?? 'Unknown splice';
+  }
+  const targetConnector = connectors.find((item) => item.id === endpoint.connectorId);
+  const pin = targetConnector?.pins.find((item) => item.id === endpoint.pinId);
+  return `${targetConnector?.displayId ?? '?'} · ${targetConnector?.label ?? 'Unknown connector'} · cavity ${pin?.cavity ?? '?'}${pin?.pinName ? ` · ${pin.pinName}` : ''}`;
+}
+
+export function ConnectorGrid({
+  connector,
+  connectors,
+  nets,
+  splices,
+  wires,
+  selected,
+  onSelect,
+  onRename,
+  onDelete,
+  onEditPin,
+  onBulkEditPins,
+  onCreateSplice,
+  onEditSplice,
+}: Props) {
   const tableHost = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<InstanceType<typeof Tabulator> | null>(null);
   const [labelDraft, setLabelDraft] = useState(connector.label);
   const labelEditing = useRef(false);
   const cancelLabelEdit = useRef(false);
+  const nearSplices = useMemo(() => connectorSplices(connector, splices), [connector, splices]);
 
   useEffect(() => {
     if (!labelEditing.current) setLabelDraft(connector.label);
@@ -67,14 +119,10 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
 
     const handlePaste = (event: ClipboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const isCellEditor = Boolean(target?.closest('.tabulator-editing'))
-        || target?.matches('input, textarea') === true;
-
-      // An open Tabulator editor owns normal text paste inside its input.
+      const isCellEditor = Boolean(target?.closest('.tabulator-editing')) || target?.matches('input, textarea') === true;
       if (isCellEditor || !activeCell || !table) return;
 
-      const clipboardText = event.clipboardData?.getData('text/plain') ?? '';
-      const matrix = parseClipboardTsv(clipboardText);
+      const matrix = parseClipboardTsv(event.clipboardData?.getData('text/plain') ?? '');
       if (!matrix.length || !matrix.some((row) => row.length)) return;
 
       const rows = table.getRows();
@@ -86,29 +134,20 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       for (let sourceRow = 0; sourceRow < matrix.length; sourceRow += 1) {
         const targetRow = rows[startRowIndex + sourceRow];
         if (!targetRow) break;
-
         const rowData = targetRow.getData() as GridRow;
         const edit: PinEdit = { pinId: rowData.id };
         let touched = false;
-
         for (let sourceColumn = 0; sourceColumn < matrix[sourceRow].length; sourceColumn += 1) {
           const targetField = editableFields[startFieldIndex + sourceColumn];
           if (!targetField) break;
-
           const value = matrix[sourceRow][sourceColumn];
           if (targetField === 'pinName') edit.pinName = value;
           else edit.netName = value;
           touched = true;
         }
-
         if (touched) edits.push(edit);
       }
-
       if (!edits.length) return;
-
-      // Tabulator's range paste intentionally tiles clipboard data to fill a
-      // selected target range. WireMaster instead uses Excel-style anchored
-      // paste: exact clipboard dimensions starting at the clicked cell.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -119,17 +158,12 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       if (!table || !activeCell) return;
       if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
       if (host.querySelector('.tabulator-editing')) return;
-
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
-
       const row = table.getRow(activeCell.rowId);
       if (!row) return;
       const cell = row.getCell(activeCell.field);
       if (!cell) return;
-
-      // Spreadsheet semantics: typing while a cell is selected replaces its
-      // current contents and immediately starts editing with the typed key.
       event.preventDefault();
       const firstCharacter = event.key;
       cell.edit();
@@ -146,30 +180,19 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
     host.addEventListener('keydown', handleTypingStart, true);
 
     table = new Tabulator(host, {
-      data: rowsFor(connector, nets),
+      data: rowsFor(connector, nets, splices),
       index: 'id',
       layout: 'fitColumns',
       height: Math.min(340, 42 + connector.pins.length * 34),
-
-      // Spreadsheet interaction: a single click selects/focuses a cell or
-      // starts a drag range; a double click opens the text editor. Printable
-      // typing on a selected editable cell is handled above and starts editing.
       editTriggerEvent: 'dblclick',
       editorEmptyValue: undefined,
       selectableRange: 1,
       selectableRangeColumns: true,
       selectableRangeRows: true,
       selectableRangeClearCells: true,
-
-      // Tabulator remains responsible for range selection and copy. Paste is
-      // intercepted above because its built-in range action has fill/tiling
-      // semantics that are undesirable for harness editing.
       clipboard: true,
       clipboardCopyStyled: false,
-      clipboardCopyConfig: {
-        rowHeaders: false,
-        columnHeaders: false,
-      },
+      clipboardCopyConfig: { rowHeaders: false, columnHeaders: false },
       clipboardCopyRowRange: 'range',
       clipboardPasteParser: 'range',
       clipboardPasteAction: 'range',
@@ -177,14 +200,20 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
         { title: 'Cavity', field: 'cavity', width: 76, headerSort: false },
         { title: 'Pin name', field: 'pinName', editor: 'input', headerSort: false },
         { title: 'Net', field: 'net', editor: 'input', headerSort: false },
+        { title: 'Splice', field: 'splice', width: 82, headerSort: false, hozAlign: 'center' },
       ],
     });
     tableRef.current = table;
 
     table.on('cellClick', (_event, cell) => {
       const field = cell.getField();
-      if (field !== 'pinName' && field !== 'net') return;
       const row = cell.getRow().getData() as GridRow;
+      if (field === 'splice') {
+        if (row.spliceIds.length === 1) onEditSplice(row.spliceIds[0]);
+        else if (row.splice === 'Add…' && row.net) onCreateSplice(row.id);
+        return;
+      }
+      if (field !== 'pinName' && field !== 'net') return;
       activeCell = { rowId: row.id, field };
     });
 
@@ -201,36 +230,27 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       table?.destroy();
       table = null;
     };
-    // The table lifetime is tied to connector identity, not immutable project snapshots.
-    // Prop changes are synchronized by the effect below without destroying the editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connector.id, onBulkEditPins, onEditPin]);
+  }, [connector.id, onBulkEditPins, onCreateSplice, onEditPin, onEditSplice]);
 
   useEffect(() => {
     const table = tableRef.current;
     const host = tableHost.current;
-    if (!table || !host) return;
-
-    // Never push an immutable project snapshot into Tabulator while its editor
-    // owns an input. Doing so can replace the value that the user is typing.
-    if (host.querySelector('.tabulator-editing')) return;
-
-    const desired = rowsFor(connector, nets);
+    if (!table || !host || host.querySelector('.tabulator-editing')) return;
+    const desired = rowsFor(connector, nets, splices);
     const current = table.getData() as GridRow[];
     const currentById = new Map(current.map((row) => [row.id, row]));
     const sameRowSet = desired.length === current.length && desired.every((row) => currentById.has(row.id));
-
     if (!sameRowSet) {
       void table.replaceData(desired);
       return;
     }
-
     const changed = desired.filter((row) => {
       const existing = currentById.get(row.id);
       return !existing || !rowsEqual(existing, row);
     });
     if (changed.length) void table.updateData(changed);
-  }, [connector, nets]);
+  }, [connector, nets, splices]);
 
   const finishLabelEdit = () => {
     labelEditing.current = false;
@@ -239,7 +259,6 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
       setLabelDraft(connector.label);
       return;
     }
-
     const next = labelDraft.trim();
     if (!next) {
       setLabelDraft(connector.label);
@@ -270,9 +289,45 @@ export function ConnectorGrid({ connector, nets, selected, onSelect, onRename, o
             }}
           />
         </div>
-        <span className="muted">{connector.libraryDefinitionId ? 'Library' : 'Generic'}</span>
+        <div className="connector-header-actions">
+          <span className="muted">{connector.libraryDefinitionId ? 'Library' : 'Generic'}</span>
+          <button type="button" className="connector-delete" title={`Remove ${connector.displayId} · ${connector.label}`} onClick={(event) => { event.stopPropagation(); onDelete(); }}>Delete</button>
+        </div>
       </div>
       <div ref={tableHost} className="connector-table" />
+      {nearSplices.length > 0 && (
+        <div className="splice-child-rows" aria-label={`${connector.displayId} connector-near splices`}>
+          {nearSplices.map((splice) => {
+            const anchor = connector.pins.find((pin) => pin.id === splice.anchorPinId);
+            const net = nets.find((item) => item.id === splice.netId);
+            const spliceEnd: WireEndpoint = { kind: 'splice', spliceId: splice.id };
+            const connected = wires.filter((wire) => wire.status !== 'ORPHANED'
+              && (endpointKeySafe(wire.endpointA) === endpointKeySafe(spliceEnd) || endpointKeySafe(wire.endpointB) === endpointKeySafe(spliceEnd)));
+            return (
+              <div className={`splice-child-row detailed status-${splice.status.toLowerCase()}`} key={splice.id} onClick={(event) => { event.stopPropagation(); onEditSplice(splice.id); }}>
+                <div className="splice-child-main">
+                  <span className="splice-child-id">↳ {splice.displayId}</span>
+                  <strong>{net?.name ?? 'Unknown net'}</strong>
+                  <span>{splice.status}</span>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onEditSplice(splice.id); }}>Edit…</button>
+                </div>
+                <div className="splice-child-location">at {connector.displayId} · {connector.label} · cavity {anchor?.cavity ?? '—'}{anchor?.pinName ? ` · ${anchor.pinName}` : ''}</div>
+                <div className="splice-child-wires">
+                  {connected.map((wire) => {
+                    const other = endpointKeySafe(wire.endpointA) === endpointKeySafe(spliceEnd) ? wire.endpointB : wire.endpointA;
+                    return <span key={wire.id}><strong>{wire.displayId}</strong> → {endpointLabel(other, connectors, splices)} <em>{wire.status}</em></span>;
+                  })}
+                  {!connected.length && <span>No materialized wires on this splice.</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
+}
+
+function endpointKeySafe(endpoint: WireEndpoint): string {
+  return endpoint.kind === 'pin' ? `pin:${endpoint.connectorId}:${endpoint.pinId}` : `splice:${endpoint.spliceId}`;
 }

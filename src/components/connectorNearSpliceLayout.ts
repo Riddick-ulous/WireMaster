@@ -1,0 +1,86 @@
+import type { ConnectorInstance, SpliceInstance, ViewerRotation } from '../core/model';
+import type { CardinalSide, RoutePoint } from './routingGeometry';
+
+export const PIN_PITCH_PX = 28;
+export const CONNECTOR_WIDTH_PX = 180;
+export const CONNECTOR_TITLE_PX = 31;
+export const HORIZONTAL_PIN_WIDTH_PX = 28;
+export const HORIZONTAL_PIN_HEIGHT_PX = 92;
+export const SPLICE_SIZE_PX = 12;
+
+/**
+ * Connector-near junctions must leave enough room for branches to enter from
+ * the two transverse sides. Adjacent anchor cavities alternate between two
+ * radial lanes. A junction lane is two 28 px routing grids apart: one grid is
+ * insufficient because two neighbouring 28 px mandatory terminal runs would
+ * intersect before either wire is allowed to bend. The offset is always away
+ * from the connector, so the anchor lead stays straight.
+ */
+export const CONNECTOR_SPLICE_BASE_GAP_PX = 56;
+export const CONNECTOR_SPLICE_STAGGER_PX = 56;
+
+/**
+ * A connector-near splice is a small junction marker inside a controlled local
+ * routing zone. It keeps a smaller body clearance than a connector/free splice
+ * so adjacent staggered junctions do not consume each other's transverse
+ * approach corridors. The physical marker, label and junction envelope remain
+ * hard obstacles.
+ */
+export const CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX = 6;
+
+export interface ConnectorNearSplicePlacement {
+  position: RoutePoint;
+  /** Side where the annotation is drawn. For connector-near splices this is
+   * deliberately the connector-facing/anchor side, leaving the external fanout
+   * sides unobstructed. */
+  labelSide: CardinalSide;
+  radialGap: number;
+  staggerLane: 0 | 1;
+}
+
+export function connectorNearSplicePosition(
+  splice: SpliceInstance,
+  connector: ConnectorInstance | undefined,
+  connectorPosition: RoutePoint,
+  rotation: ViewerRotation,
+  visualSlot?: number,
+  connectorSize?: { width: number; height: number },
+): ConnectorNearSplicePlacement {
+  const pinIndex = Math.max(0, connector?.pins.findIndex((pin) => pin.id === splice.anchorPinId) ?? 0);
+  const slot = visualSlot ?? pinIndex;
+  const staggerLane: 0 | 1 = slot % 2 === 0 ? 0 : 1;
+  const radialGap = CONNECTOR_SPLICE_BASE_GAP_PX + staggerLane * CONNECTOR_SPLICE_STAGGER_PX;
+  const pinCenterY = connectorPosition.y + CONNECTOR_TITLE_PX + slot * PIN_PITCH_PX + PIN_PITCH_PX / 2;
+  const pinCenterX = connectorPosition.x + slot * HORIZONTAL_PIN_WIDTH_PX + HORIZONTAL_PIN_WIDTH_PX / 2;
+  const size = connectorSize ?? {
+    width: rotation === 90 || rotation === 270
+      ? Math.max(CONNECTOR_WIDTH_PX, (connector?.pins.length ?? 0) * HORIZONTAL_PIN_WIDTH_PX)
+      : CONNECTOR_WIDTH_PX,
+    height: rotation === 90 || rotation === 270
+      ? CONNECTOR_TITLE_PX + HORIZONTAL_PIN_HEIGHT_PX
+      : CONNECTOR_TITLE_PX + (connector?.pins.length ?? 0) * PIN_PITCH_PX,
+  };
+
+  if (rotation === 180) {
+    return {
+      position: { x: connectorPosition.x - radialGap - SPLICE_SIZE_PX, y: pinCenterY - SPLICE_SIZE_PX / 2 },
+      labelSide: 'right', radialGap, staggerLane,
+    };
+  }
+  if (rotation === 90) {
+    return {
+      position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y + size.height + radialGap },
+      labelSide: 'top', radialGap, staggerLane,
+    };
+  }
+  if (rotation === 270) {
+    return {
+      position: { x: pinCenterX - SPLICE_SIZE_PX / 2, y: connectorPosition.y - radialGap - SPLICE_SIZE_PX },
+      labelSide: 'bottom', radialGap, staggerLane,
+    };
+  }
+  return {
+    position: { x: connectorPosition.x + size.width + radialGap, y: pinCenterY - SPLICE_SIZE_PX / 2 },
+    labelSide: 'left', radialGap, staggerLane,
+  };
+}

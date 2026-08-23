@@ -12,9 +12,15 @@ export function deserializeProject(json: string): Project {
   const project = parsed as Project;
   for (const harness of project.subHarnesses) {
     if (!harness.viewerLayout) throw new Error(`Invalid WireMaster project: missing viewer layout for ${harness.name}`);
+    harness.splices ??= [];
+    harness.wires ??= [];
     harness.viewerLayout.connectorPositions ??= {};
     harness.viewerLayout.connectorRotations ??= {};
     harness.viewerLayout.splicePositions ??= {};
+    for (const splice of harness.splices) {
+      splice.memberEndpoints ??= [];
+      splice.status ??= 'ACTIVE';
+    }
   }
   return project;
 }
