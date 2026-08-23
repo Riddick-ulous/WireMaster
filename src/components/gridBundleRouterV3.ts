@@ -12,7 +12,7 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
-import { buildRouteBundles, type ElementDisplayIds, type RouteBundle } from './routingBundles';
+import { buildRouteBundles, compareRouteRequestsStable, type ElementDisplayIds, type RouteBundle } from './routingBundles';
 
 export const BUNDLE_GRID_SIZE = 28;
 const EPS = 0.25;
@@ -34,12 +34,26 @@ interface Reservation {
   edges: Map<string, { wireId: string; bundleKey: string; orientation: Orientation }>;
   nodes: Map<string, Usage>;
 }
+interface RunwayUsage { h: Set<string>; v: Set<string> }
+interface TerminalRunway {
+  ownerId: string;
+  orientation: Orientation;
+  nodes: Node[];
+  edges: string[];
+}
+interface RunwayReservations {
+  byOwner: Map<string, TerminalRunway[]>;
+  edges: Map<string, Set<string>>;
+  nodes: Map<string, RunwayUsage>;
+  created: number;
+}
 interface State extends Node { dir: Direction; run: number; crossingStraight: boolean }
 interface QueueItem { key: string; state: State; g: number; f: number }
 interface Passage { blocked: boolean; crossing: boolean }
 interface CorridorStep { blocked: boolean; crossingAtStart: boolean; crossingAtEnd: boolean; crossings: number }
 interface BeamState {
   reservation: Reservation;
+  runways: RunwayReservations;
   results: Map<string, OrthogonalRouteResult>;
   pending: RouteBundle[];
   corridorBundles: number;
@@ -50,6 +64,11 @@ export interface BundleGridPlanV3 {
   bundleOrder: RouteBundle[];
   corridorBundles: number;
   fallbackBundles: number;
+  runwayReservations: {
+    created: number;
+    released: number;
+    remaining: number;
+  };
 }
 
 function posMod(value: number, divisor: number) { const r = value % divisor; return r < 0 ? r + divisor : r; }
@@ -116,6 +135,9 @@ function snap(value: number, origin: number, positive: boolean) {
   const n = (value - origin) / BUNDLE_GRID_SIZE;
   return origin + (positive ? Math.ceil(n - EPS / BUNDLE_GRID_SIZE) : Math.floor(n + EPS / BUNDLE_GRID_SIZE)) * BUNDLE_GRID_SIZE;
 }
+function isVirtualEgress(option: RouteTerminalOption): boolean {
+  return option.key.includes('|bundle-grid:') || option.key.includes('|fanout:') || option.key.includes('|grid:');
+}
 function portal(frame: Frame, option: RouteTerminalOption, minStraight: number): Portal | null {
   const departed = outward(option.point, option.side, minStraight);
   let p: RoutePoint;
@@ -147,6 +169,10 @@ function protectTerminalPortals(frame: Frame, requests: RouteRequest[], blocked:
     ];
     for (const end of ends) {
       for (const option of end.terminal.options) {
+        // Virtual egresses use an owner-aware two-grid runway. Blocking every
+        // non-radial portal edge globally would make that runway a permanent
+        // keepout and would also forbid the intended perpendicular crossing.
+        if (isVirtualEgress(option)) continue;
         const p = portal(frame, option, end.minStraight);
         if (!p) continue;
         const allowed = sideDir(option.side);
@@ -189,6 +215,98 @@ function buildBlockedEdges(frame: Frame, obstacles: RouteObstacle[]): Set<string
     }
   }
   return blocked;
+}
+
+function emptyRunwayReservations(): RunwayReservations {
+  return { byOwner: new Map(), edges: new Map(), nodes: new Map(), created: 0 };
+}
+
+function addTerminalRunway(runways: RunwayReservations, runway: TerminalRunway) {
+  const owned = runways.byOwner.get(runway.ownerId);
+  if (owned) owned.push(runway);
+  else runways.byOwner.set(runway.ownerId, [runway]);
+  for (const key of runway.edges) {
+    const owners = runways.edges.get(key) ?? new Set<string>();
+    owners.add(runway.ownerId);
+    runways.edges.set(key, owners);
+  }
+  for (const runwayNode of runway.nodes) {
+    const key = nodeKey(runwayNode);
+    const usage = runways.nodes.get(key) ?? { h: new Set<string>(), v: new Set<string>() };
+    usage[runway.orientation].add(runway.ownerId);
+    runways.nodes.set(key, usage);
+  }
+}
+
+function buildRunwayReservations(frame: Frame, requests: RouteRequest[]): RunwayReservations {
+  const runways = emptyRunwayReservations();
+  for (const request of requests) {
+    for (const terminal of [request.source, request.target]) {
+      for (const option of terminal.options) {
+        if (!isVirtualEgress(option)) continue;
+        const start = node(frame, option.point);
+        const aligned = world(frame, start);
+        if (Math.abs(aligned.x - option.point.x) > EPS || Math.abs(aligned.y - option.point.y) > EPS) continue;
+        const step = vec(sideDir(option.side));
+        const nodes = [start, add(start, step), add(start, step, 2)];
+        const runway: TerminalRunway = {
+          ownerId: request.id,
+          orientation: orient(sideDir(option.side)),
+          nodes,
+          edges: [edgeKey(nodes[0], nodes[1]), edgeKey(nodes[1], nodes[2])],
+        };
+        addTerminalRunway(runways, runway);
+        runways.created += 1;
+      }
+    }
+  }
+  return runways;
+}
+
+function detachRunways(runways: RunwayReservations, ownerIds: Iterable<string>): TerminalRunway[] {
+  const detached: TerminalRunway[] = [];
+  for (const ownerId of new Set(ownerIds)) {
+    const owned = runways.byOwner.get(ownerId);
+    if (!owned) continue;
+    runways.byOwner.delete(ownerId);
+    detached.push(...owned);
+    for (const runway of owned) {
+      for (const key of runway.edges) {
+        const owners = runways.edges.get(key);
+        owners?.delete(ownerId);
+        if (!owners?.size) runways.edges.delete(key);
+      }
+      for (const runwayNode of runway.nodes) {
+        const key = nodeKey(runwayNode);
+        const usage = runways.nodes.get(key);
+        usage?.[runway.orientation].delete(ownerId);
+        if (usage && !usage.h.size && !usage.v.size) runways.nodes.delete(key);
+      }
+    }
+  }
+  return detached;
+}
+
+function restoreRunways(runways: RunwayReservations, detached: TerminalRunway[]) {
+  for (const runway of detached) addTerminalRunway(runways, runway);
+}
+
+function cloneRunways(runways: RunwayReservations): RunwayReservations {
+  return {
+    byOwner: new Map([...runways.byOwner].map(([owner, owned]) => [owner, owned.slice()])),
+    edges: new Map([...runways.edges].map(([key, owners]) => [key, new Set(owners)])),
+    nodes: new Map([...runways.nodes].map(([key, usage]) => [key, { h: new Set(usage.h), v: new Set(usage.v) }])),
+    created: runways.created,
+  };
+}
+
+function runwayCount(runways: RunwayReservations): number {
+  return [...runways.byOwner.values()].reduce((sum, owned) => sum + owned.length, 0);
+}
+
+function runwayDiagnostics(runways: RunwayReservations): BundleGridPlanV3['runwayReservations'] {
+  const remaining = runwayCount(runways);
+  return { created: runways.created, released: runways.created - remaining, remaining };
 }
 
 class Heap {
@@ -239,6 +357,27 @@ function passageAtNode(usage: Usage | undefined, move: Orientation, isEnd: boole
   return { blocked: false, crossing: false };
 }
 
+function passageAtRunwayNode(usage: RunwayUsage | undefined, move: Orientation, isEnd: boolean): Passage {
+  if (!usage) return { blocked: false, crossing: false };
+  const same = usage[move];
+  const perpendicular = move === 'h' ? usage.v : usage.h;
+  if (same.size) return { blocked: true, crossing: false };
+  if (perpendicular.size) return { blocked: isEnd, crossing: !isEnd };
+  return { blocked: false, crossing: false };
+}
+
+function combinedPassage(
+  reservation: Reservation,
+  runways: RunwayReservations,
+  at: Node,
+  move: Orientation,
+  isEnd: boolean,
+): Passage {
+  const routed = passageAtNode(reservation.nodes.get(nodeKey(at)), move, isEnd);
+  const runway = passageAtRunwayNode(runways.nodes.get(nodeKey(at)), move, isEnd);
+  return { blocked: routed.blocked || runway.blocked, crossing: routed.crossing || runway.crossing };
+}
+
 function corridorFootprintStep(
   a: Node,
   b: Node,
@@ -246,6 +385,7 @@ function corridorFootprintStep(
   width: number,
   blocked: Set<string>,
   reservation: Reservation,
+  runways: RunwayReservations,
   isTarget: boolean,
 ): CorridorStep {
   const normal = rightNormal(dir);
@@ -257,9 +397,9 @@ function corridorFootprintStep(
     const ta = add(a, normal, track);
     const tb = add(b, normal, track);
     const key = edgeKey(ta, tb);
-    if (blocked.has(key) || reservation.edges.has(key)) return { blocked: true, crossingAtStart: false, crossingAtEnd: false, crossings: 0 };
-    const startPassage = passageAtNode(reservation.nodes.get(nodeKey(ta)), move, false);
-    const endPassage = passageAtNode(reservation.nodes.get(nodeKey(tb)), move, isTarget);
+    if (blocked.has(key) || reservation.edges.has(key) || runways.edges.has(key)) return { blocked: true, crossingAtStart: false, crossingAtEnd: false, crossings: 0 };
+    const startPassage = combinedPassage(reservation, runways, ta, move, false);
+    const endPassage = combinedPassage(reservation, runways, tb, move, isTarget);
     if (startPassage.blocked || endPassage.blocked) return { blocked: true, crossingAtStart: false, crossingAtEnd: false, crossings: 0 };
     crossingAtStart ||= startPassage.crossing;
     crossingAtEnd ||= endPassage.crossing;
@@ -268,7 +408,7 @@ function corridorFootprintStep(
   return { blocked: false, crossingAtStart, crossingAtEnd, crossings };
 }
 
-function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direction, targetDir: Direction, width: number, blocked: Set<string>, reservation: Reservation, variant = 0): Node[] | null {
+function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direction, targetDir: Direction, width: number, blocked: Set<string>, reservation: Reservation, runways: RunwayReservations, variant = 0): Node[] | null {
   const open = new Heap(); const score = new Map<string, number>(); const came = new Map<string, string>(); const states = new Map<string, State>();
   const initial: State = { ...start, dir: startDir, run: 0, crossingStraight: false };
   const initialKey = stateKey(initial); score.set(initialKey, 0); states.set(initialKey, initial);
@@ -283,7 +423,7 @@ function searchCorridor(frame: Frame, start: Node, target: Node, startDir: Direc
       const turning = dir !== current.dir; if (turning && current.run < CORRIDOR_MIN_RUN) continue;
       const next = add(current, vec(dir)); if (!inBounds(next, bounds)) continue;
       const isTarget = next.gx === target.gx && next.gy === target.gy;
-      const step = corridorFootprintStep(current, next, dir, width, blocked, reservation, isTarget);
+      const step = corridorFootprintStep(current, next, dir, width, blocked, reservation, runways, isTarget);
       if (step.blocked) continue;
       if (step.crossingAtStart && (!current.crossingStraight || turning)) continue;
       const run = turning ? 1 : Math.min(CORRIDOR_MIN_RUN, current.run + 1);
@@ -328,24 +468,45 @@ function expand(points: Node[]): Node[] {
   }
   return out;
 }
-function pathCompatibility(points: Node[], blocked: Set<string>, reservation: Reservation): { valid: boolean; crossings: number } {
+function pathCompatibility(points: Node[], blocked: Set<string>, reservation: Reservation, runways: RunwayReservations): { valid: boolean; crossings: number } {
   const nodes = expand(points); if (nodes.length < 2) return { valid: false, crossings: 0 };
   for (let i = 1; i < nodes.length; i += 1) {
-    if (blocked.has(edgeKey(nodes[i - 1], nodes[i])) || reservation.edges.has(edgeKey(nodes[i - 1], nodes[i]))) return { valid: false, crossings: 0 };
+    const key = edgeKey(nodes[i - 1], nodes[i]);
+    if (blocked.has(key) || reservation.edges.has(key) || runways.edges.has(key)) return { valid: false, crossings: 0 };
   }
   let crossings = 0;
   for (let i = 0; i < nodes.length; i += 1) {
-    const usage = reservation.nodes.get(nodeKey(nodes[i]));
-    if (!usage) continue;
+    const routedUsage = reservation.nodes.get(nodeKey(nodes[i]));
+    const runwayUsage = runways.nodes.get(nodeKey(nodes[i]));
+    if (!routedUsage && !runwayUsage) continue;
     if (i === 0 || i === nodes.length - 1) return { valid: false, crossings: 0 };
     const before = edgeOrient(nodes[i - 1], nodes[i]);
     const after = edgeOrient(nodes[i], nodes[i + 1]);
     if (before !== after) return { valid: false, crossings: 0 };
-    const passage = passageAtNode(usage, before, false);
+    const passage = combinedPassage(reservation, runways, nodes[i], before, false);
     if (passage.blocked) return { valid: false, crossings: 0 };
     if (passage.crossing) crossings += 1;
   }
   return { valid: true, crossings };
+}
+
+function alignedVirtualNode(frame: Frame, option: RouteTerminalOption): Node | null {
+  if (!isVirtualEgress(option)) return null;
+  const candidate = node(frame, option.point);
+  const aligned = world(frame, candidate);
+  return Math.abs(aligned.x - option.point.x) <= EPS && Math.abs(aligned.y - option.point.y) <= EPS
+    ? candidate
+    : null;
+}
+
+/** Include the virtual egress-to-portal runway in the permanent wire claim. */
+function withTerminalRunways(frame: Frame, track: Node[], source: Portal, target: Portal): Node[] {
+  const result = track.slice();
+  const sourceEgress = alignedVirtualNode(frame, source.option);
+  const targetEgress = alignedVirtualNode(frame, target.option);
+  if (sourceEgress) result.unshift(sourceEgress);
+  if (targetEgress) result.push(targetEgress);
+  return result;
 }
 function reserve(points: Node[], reservation: Reservation, wireId: string, bundleKey: string) {
   const nodes = expand(points);
@@ -368,7 +529,14 @@ function cloneReservation(reservation: Reservation): Reservation {
 }
 function projection(p: Node, normal: Node) { return p.gx * normal.gx + p.gy * normal.gy; }
 
-function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation, variant = 0): Map<string, OrthogonalRouteResult> | null {
+function tryCorridorCore(
+  bundle: RouteBundle,
+  frame: Frame,
+  blocked: Set<string>,
+  reservation: Reservation,
+  runways: RunwayReservations,
+  variant = 0,
+): Map<string, OrthogonalRouteResult> | null {
   const width = bundle.requests.length; if (width < 2) return null;
   const raw = bundle.requests.map((request) => ({ request, a: onePortal(frame, request, bundle.elementAId), b: onePortal(frame, request, bundle.elementBId) }));
   if (raw.some((item) => !item.a || !item.b)) return null;
@@ -376,21 +544,22 @@ function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, re
   const startDir = sideDir(items[0].a.option.side); const targetDir = opposite(sideDir(items[0].b.option.side));
   if (items.some((item) => sideDir(item.a.option.side) !== startDir || opposite(sideDir(item.b.option.side)) !== targetDir)) return null;
   const sourceNormal = rightNormal(startDir); const targetNormal = rightNormal(targetDir);
-  items.sort((l, r) => projection(l.a.node, sourceNormal) - projection(r.a.node, sourceNormal) || l.request.id.localeCompare(r.request.id, undefined, { numeric: true }));
+  items.sort((l, r) => projection(l.a.node, sourceNormal) - projection(r.a.node, sourceNormal) || compareRouteRequestsStable(l.request, r.request));
   const targetSlots = items.map((item) => item.b).sort((l, r) => projection(l.node, targetNormal) - projection(r.node, targetNormal));
   const sourceRef = items[0].a.node; const targetRef = targetSlots[0].node;
   for (let i = 0; i < width; i += 1) {
     const sa = add(sourceRef, sourceNormal, i); const tb = add(targetRef, targetNormal, i);
     if (items[i].a.node.gx !== sa.gx || items[i].a.node.gy !== sa.gy || targetSlots[i].node.gx !== tb.gx || targetSlots[i].node.gy !== tb.gy) return null;
   }
-  const spine = searchCorridor(frame, sourceRef, targetRef, startDir, targetDir, width, blocked, reservation, variant); if (!spine) return null;
+  const spine = searchCorridor(frame, sourceRef, targetRef, startDir, targetDir, width, blocked, reservation, runways, variant); if (!spine) return null;
   const tracks = items.map((_, i) => offsetTrack(spine, i));
-  const compatibilities = tracks.map((track) => pathCompatibility(track, blocked, reservation));
+  const reservationTracks = tracks.map((track, index) => withTerminalRunways(frame, track, items[index].a, targetSlots[index]));
+  const compatibilities = reservationTracks.map((track) => pathCompatibility(track, blocked, reservation, runways));
   if (compatibilities.some((compatibility) => !compatibility.valid)) return null;
   const results = new Map<string, OrthogonalRouteResult>();
   for (let i = 0; i < width; i += 1) {
     const item = items[i]; const slot = targetSlots[i]; const track = tracks[i];
-    reserve(track, reservation, item.request.id, bundle.key);
+    reserve(reservationTracks[i], reservation, item.request.id, bundle.key);
     const gridPoints = track.map((p) => world(frame, p));
     const aToB = simplifyRoute([item.a.option.point, item.a.world, ...gridPoints.slice(1, -1), slot.world, slot.option.point]);
     const aEnd = endpoint(item.request, bundle.elementAId); const forward = aEnd.requestSource; const points = forward ? aToB : aToB.slice().reverse();
@@ -410,11 +579,29 @@ function tryCorridor(bundle: RouteBundle, frame: Frame, blocked: Set<string>, re
   return results;
 }
 
-function nodeConflict(usage: Usage | undefined, move: Orientation, isEnd: boolean) { return passageAtNode(usage, move, isEnd); }
-function searchSingle(frame: Frame, start: Portal, target: Portal, blocked: Set<string>, reservation: Reservation): Node[] | null {
+function tryCorridor(
+  bundle: RouteBundle,
+  frame: Frame,
+  blocked: Set<string>,
+  reservation: Reservation,
+  runways: RunwayReservations,
+  variant = 0,
+): Map<string, OrthogonalRouteResult> | null {
+  const detached = detachRunways(runways, bundle.requests.map((request) => request.id));
+  const result = tryCorridorCore(bundle, frame, blocked, reservation, runways, variant);
+  if (!result) restoreRunways(runways, detached);
+  return result;
+}
+
+function searchSingle(frame: Frame, start: Portal, target: Portal, blocked: Set<string>, reservation: Reservation, runways: RunwayReservations): Node[] | null {
   const startDir = sideDir(start.option.side); const targetDir = opposite(sideDir(target.option.side));
   const open = new Heap(); const score = new Map<string, number>(); const came = new Map<string, string>(); const states = new Map<string, State>();
-  const initial: State = { ...start.node, dir: startDir, run: 1, crossingStraight: false }; const key0 = stateKey(initial);
+  const initial: State = {
+    ...start.node,
+    dir: startDir,
+    run: isVirtualEgress(start.option) ? 0 : CORRIDOR_MIN_RUN,
+    crossingStraight: false,
+  }; const key0 = stateKey(initial);
   score.set(key0, 0); states.set(key0, initial); open.push({ key: key0, state: initial, g: 0, f: gridDistance(start.node, target.node) });
   const bounds = localBounds(frame, start.node, target.node, 20);
   while (open.size) {
@@ -423,27 +610,37 @@ function searchSingle(frame: Frame, start: Portal, target: Portal, blocked: Set<
     for (const dir of ['left', 'right', 'up', 'down'] as Direction[]) {
       if (dir === opposite(current.dir) || (current.crossingStraight && dir !== current.dir)) continue;
       const next = add(current, vec(dir)); if (!inBounds(next, bounds)) continue;
-      const ek = edgeKey(current, next); if (blocked.has(ek) || reservation.edges.has(ek)) continue;
-      const turning = dir !== current.dir; if (turning && reservation.nodes.has(nodeKey(current))) continue;
-      const conflict = nodeConflict(reservation.nodes.get(nodeKey(next)), orient(dir), next.gx === target.node.gx && next.gy === target.node.gy); if (conflict.blocked) continue;
-      const state: State = { ...next, dir, run: 1, crossingStraight: conflict.crossing }; const key = stateKey(state);
+      const ek = edgeKey(current, next); if (blocked.has(ek) || reservation.edges.has(ek) || runways.edges.has(ek)) continue;
+      const turning = dir !== current.dir;
+      if (turning && (current.run < CORRIDOR_MIN_RUN || reservation.nodes.has(nodeKey(current)) || runways.nodes.has(nodeKey(current)))) continue;
+      const conflict = combinedPassage(reservation, runways, next, orient(dir), next.gx === target.node.gx && next.gy === target.node.gy); if (conflict.blocked) continue;
+      const run = turning ? 1 : Math.min(CORRIDOR_MIN_RUN, current.run + 1);
+      const state: State = { ...next, dir, run, crossingStraight: conflict.crossing }; const key = stateKey(state);
       const g = item.g + 1 + (turning ? TURN_COST : 0) + (conflict.crossing ? CROSSING_COST : 0); if (g + EPS >= (score.get(key) ?? Infinity)) continue;
       score.set(key, g); came.set(key, item.key); states.set(key, state); open.push({ key, state, g, f: g + gridDistance(next, target.node) });
     }
   }
   return null;
 }
-function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation): Map<string, OrthogonalRouteResult> {
+function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reservation: Reservation, runways: RunwayReservations): Map<string, OrthogonalRouteResult> {
   const out = new Map<string, OrthogonalRouteResult>();
   for (const request of bundle.requests) {
+    // The guard exists only until its owner gets its final routing attempt.
+    // Success replaces it with the permanent wire occupancy below; a final
+    // failure also drops it so a dead request cannot leave a ghost keepout.
+    detachRunways(runways, [request.id]);
+    const fail = () => {
+      out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' });
+    };
     const aEnd = endpoint(request, bundle.elementAId); const bEnd = endpoint(request, bundle.elementBId);
     const a = aEnd.terminal.options.length === 1 ? portal(frame, aEnd.terminal.options[0], aEnd.minStraight) : null;
     const b = bEnd.terminal.options.length === 1 ? portal(frame, bEnd.terminal.options[0], bEnd.minStraight) : null;
-    if (!a || !b) { out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' }); continue; }
-    const path = searchSingle(frame, a, b, blocked, reservation); if (!path) { out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' }); continue; }
-    const compatibility = pathCompatibility(path, blocked, reservation);
-    if (!compatibility.valid) { out.set(request.id, { status: 'UNROUTED', reason: 'NO_VALID_PATH' }); continue; }
-    reserve(path, reservation, request.id, bundle.key);
+    if (!a || !b) { fail(); continue; }
+    const path = searchSingle(frame, a, b, blocked, reservation, runways); if (!path) { fail(); continue; }
+    const reservationTrack = withTerminalRunways(frame, path, a, b);
+    const compatibility = pathCompatibility(reservationTrack, blocked, reservation, runways);
+    if (!compatibility.valid) { fail(); continue; }
+    reserve(reservationTrack, reservation, request.id, bundle.key);
     const aToB = simplifyRoute([a.option.point, a.world, ...path.slice(1, -1).map((p) => world(frame, p)), b.world, b.option.point]);
     const forward = aEnd.requestSource; const points = forward ? aToB : aToB.slice().reverse(); const segments = routeSegments(points);
     out.set(request.id, {
@@ -457,20 +654,21 @@ function fallback(bundle: RouteBundle, frame: Frame, blocked: Set<string>, reser
 
 function finishState(state: BeamState, remaining: RouteBundle[], frame: Frame, blocked: Set<string>): BundleGridPlanV3 {
   const reservation = cloneReservation(state.reservation);
+  const runways = cloneRunways(state.runways);
   const results = new Map(state.results);
   const pending = state.pending.slice();
   let corridorBundles = state.corridorBundles;
 
   for (const bundle of remaining) {
-    const corridor = tryCorridor(bundle, frame, blocked, reservation);
+    const corridor = tryCorridor(bundle, frame, blocked, reservation, runways);
     if (!corridor) { pending.push(bundle); continue; }
     corridorBundles += 1;
     for (const [id, result] of corridor) results.set(id, result);
   }
   for (const bundle of pending) {
-    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
+    for (const [id, result] of fallback(bundle, frame, blocked, reservation, runways)) results.set(id, result);
   }
-  return { results, bundleOrder: [], corridorBundles, fallbackBundles: pending.length };
+  return { results, bundleOrder: [], corridorBundles, fallbackBundles: pending.length, runwayReservations: runwayDiagnostics(runways) };
 }
 function routedCount(plan: BundleGridPlanV3) { return [...plan.results.values()].filter((result) => result.status === 'ROUTED').length; }
 function totalLength(plan: BundleGridPlanV3) { return [...plan.results.values()].reduce((sum, result) => sum + (result.status === 'ROUTED' ? result.length : 0), 0); }
@@ -480,22 +678,23 @@ export function planBundleGridRoutesV3(requests: RouteRequest[], obstacles: Rout
   const frame = inferFrame(requests, obstacles);
   const blocked = buildBlockedEdges(frame, obstacles);
   protectTerminalPortals(frame, requests, blocked);
+  const runways = buildRunwayReservations(frame, requests);
   const reservation: Reservation = { edges: new Map(), nodes: new Map() }; const results = new Map<string, OrthogonalRouteResult>();
   const bundleOrder = buildRouteBundles(requests, displayIds);
   const pending: RouteBundle[] = [];
   let corridorBundles = 0;
 
   for (const bundle of bundleOrder) {
-    const corridor = tryCorridor(bundle, frame, blocked, reservation);
+    const corridor = tryCorridor(bundle, frame, blocked, reservation, runways);
     if (!corridor) { pending.push(bundle); continue; }
     corridorBundles += 1;
     for (const [id, result] of corridor) results.set(id, result);
   }
   for (const bundle of pending) {
-    for (const [id, result] of fallback(bundle, frame, blocked, reservation)) results.set(id, result);
+    for (const [id, result] of fallback(bundle, frame, blocked, reservation, runways)) results.set(id, result);
   }
 
-  return { results, bundleOrder, corridorBundles, fallbackBundles: pending.length };
+  return { results, bundleOrder, corridorBundles, fallbackBundles: pending.length, runwayReservations: runwayDiagnostics(runways) };
 }
 
 /** Experimental bounded beam used only by the stress test. The normal V3 path
@@ -504,9 +703,10 @@ export function planBundleGridRoutesV3BeamExperiment(requests: RouteRequest[], o
   const frame = inferFrame(requests, obstacles);
   const blocked = buildBlockedEdges(frame, obstacles);
   protectTerminalPortals(frame, requests, blocked);
+  const initialRunways = buildRunwayReservations(frame, requests);
   const bundleOrder = buildRouteBundles(requests, displayIds);
   const depth = Math.min(BEAM_DEPTH, bundleOrder.length);
-  let beam: BeamState[] = [{ reservation: { edges: new Map(), nodes: new Map() }, results: new Map(), pending: [], corridorBundles: 0 }];
+  let beam: BeamState[] = [{ reservation: { edges: new Map(), nodes: new Map() }, runways: initialRunways, results: new Map(), pending: [], corridorBundles: 0 }];
 
   for (let index = 0; index < depth; index += 1) {
     const bundle = bundleOrder[index];
@@ -517,7 +717,8 @@ export function planBundleGridRoutesV3BeamExperiment(requests: RouteRequest[], o
         const seen = new Set<string>();
         for (let variant = 0; variant < CORRIDOR_VARIANTS; variant += 1) {
           const reservation = cloneReservation(state.reservation);
-          const corridor = tryCorridor(bundle, frame, blocked, reservation, variant);
+          const runways = cloneRunways(state.runways);
+          const corridor = tryCorridor(bundle, frame, blocked, reservation, runways, variant);
           if (!corridor) continue;
           const signature = [...reservation.edges]
             .filter(([, edge]) => edge.bundleKey === bundle.key)
@@ -528,7 +729,7 @@ export function planBundleGridRoutesV3BeamExperiment(requests: RouteRequest[], o
           seen.add(signature);
           const results = new Map(state.results);
           for (const [id, result] of corridor) results.set(id, result);
-          candidates.push({ reservation, results, pending: state.pending.slice(), corridorBundles: state.corridorBundles + 1 });
+          candidates.push({ reservation, runways, results, pending: state.pending.slice(), corridorBundles: state.corridorBundles + 1 });
         }
       }
       if (!candidates.length) {
@@ -556,6 +757,12 @@ export function planBundleGridRoutesV3BeamExperiment(requests: RouteRequest[], o
   completed.sort((left, right) => routedCount(right) - routedCount(left)
     || right.corridorBundles - left.corridorBundles
     || totalLength(left) - totalLength(right));
-  const best = completed[0] ?? { results: new Map(), bundleOrder: [], corridorBundles: 0, fallbackBundles: bundleOrder.length };
+  const best = completed[0] ?? {
+    results: new Map(),
+    bundleOrder: [],
+    corridorBundles: 0,
+    fallbackBundles: bundleOrder.length,
+    runwayReservations: runwayDiagnostics(initialRunways),
+  };
   return { ...best, bundleOrder };
 }

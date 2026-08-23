@@ -1,5 +1,5 @@
 import type { RouteObstacle, RoutePoint, RouteRequest, RouteTerminal } from './routingGeometry';
-import type { RouteBundle } from './routingBundles';
+import { compareRouteRequestsStable, type RouteBundle } from './routingBundles';
 
 export interface SameFacingLayoutExperiment {
   requests: RouteRequest[];
@@ -52,7 +52,7 @@ export function reverseOneSameFacingBundleEnd(bundle: RouteBundle, obstacles: Ro
     .slice()
     .sort((left, right) => axisValue(left, aSide) - axisValue(right, aSide));
   const reversedPoints = sortedPoints.slice().reverse();
-  const byWire = entries.slice().sort((left, right) => numericId(left.request.id) - numericId(right.request.id));
+  const byWire = entries.slice().sort((left, right) => compareRouteRequestsStable(left.request, right.request));
   const pointByWire = new Map(byWire.map((entry, index) => [entry.request.id, reversedPoints[index]]));
   const deltaByLabelId = new Map<string, RoutePoint>();
 

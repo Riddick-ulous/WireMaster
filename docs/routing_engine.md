@@ -151,7 +151,7 @@ Routing is optimized lexicographically. A lower-priority objective may never imp
 6. prefer the natural main direction implied by terminal sides,
 7. prefer clean parallel/bundled corridors while respecting spacing.
 
-The result must be deterministic for identical input geometry. Wire display ID is only a final tie-breaker and must not give low-numbered wires permanent routing priority.
+The result must be deterministic for identical input geometry. Electrical UUIDs are never tie-breakers. Wire display ID is only a final tie-breaker and must not give low-numbered wires permanent routing priority; requests without a display ID use terminal geometry and stable input order instead.
 
 ## 4. Rendering contract
 

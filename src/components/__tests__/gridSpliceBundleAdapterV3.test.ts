@@ -28,6 +28,44 @@ function spliceTerminal(): RouteTerminal {
 }
 
 describe('bundle-aware splice finalization', () => {
+  it('keeps virtual splice and connector egress order independent of swapped UUIDs', () => {
+    const makeRequests = (ids: [string, string]): RouteRequest[] => ['W1', 'W2'].map((displayId, index) => ({
+      id: ids[index],
+      displayId,
+      source: {
+        nodeId: 'C1',
+        options: [{ key: `${displayId}-source`, side: 'right', point: { x: 0, y: 56 } }],
+      },
+      target: spliceTerminal(),
+    }));
+    const signature = (ids: [string, string]) => {
+      const requests = makeRequests(ids);
+      const splice = expandGridSplicesBundleV3(
+        requests,
+        [],
+        { originX: 0, originY: 0, gridSize: 28 },
+        { C1: 'C1', S1: 'S1' },
+      );
+      const fanout = expandGridConnectorFanoutV3(
+        requests.map((request) => ({ ...request, target: { nodeId: 'C2', options: [{ key: `${request.displayId}-target`, side: 'left', point: { x: 400, y: 56 } }] } })),
+        [],
+        { originX: 0, originY: 0, gridSize: 28 },
+        new Set(['C1']),
+        { C1: 'C1', C2: 'C2' },
+      );
+      return Object.fromEntries(requests.map((request) => {
+        const spliceRequest = splice.requests.find((candidate) => candidate.displayId === request.displayId)!;
+        const fanoutRequest = fanout.requests.find((candidate) => candidate.displayId === request.displayId)!;
+        return [request.displayId!, {
+          splice: spliceRequest.target.options[0].point,
+          fanout: fanoutRequest.source.options[0].point,
+        }];
+      }));
+    };
+    const ids: [string, string] = ['ffffffff-ffff-4fff-8fff-ffffffffffff', '00000000-0000-4000-8000-000000000000'];
+    expect(signature(ids)).toEqual(signature([ids[1], ids[0]]));
+  });
+
   it('reconnects a permuted bundle track through the virtual splice slot selected by the router', () => {
     const requests: RouteRequest[] = ['W1', 'W2'].map((id, index) => ({
       id,

@@ -11,7 +11,7 @@ import {
   type RoutePoint,
   type RouteRequest,
 } from './routingGeometry';
-import type { RouteBundle } from './routingBundles';
+import { compareRouteRequestsStable, type RouteBundle } from './routingBundles';
 
 export const HAIRPIN_GRID_SIZE = 28;
 const MAX_OUTWARD_SEARCH_STEPS = 48;
@@ -126,7 +126,7 @@ function buildEntries(bundle: RouteBundle): { entries: HairpinEntry[]; side: Hor
   }
 
   entries.sort((left, right) => left.sourcePortal.y - right.sourcePortal.y
-    || left.request.id.localeCompare(right.request.id, undefined, { numeric: true }));
+    || compareRouteRequestsStable(left.request, right.request));
 
   // Reversing one viewer block gives the nested U-turn a deterministic order.
   // Cavity/handle identity remains attached to the wire itself.

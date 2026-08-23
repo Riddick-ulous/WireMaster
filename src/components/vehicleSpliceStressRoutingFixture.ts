@@ -398,6 +398,7 @@ export function createVehicleSpliceStressRoutingFixture(): VehicleSpliceStressRo
     const target = terminalForEnd(wire.b);
     requests.push({
       id: wire.id,
+      displayId: wire.id,
       source,
       target,
       sourceMinStraight: wire.a.kind === 'pin' ? MIN_LABEL_EXIT : VEHICLE_GRID_PX,

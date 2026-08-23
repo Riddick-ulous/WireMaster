@@ -11,6 +11,7 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
+import { stableRouteRequestOrderKey } from './routingBundles';
 
 export interface GridAlignmentV3 {
   originX: number;
@@ -20,6 +21,7 @@ export interface GridAlignmentV3 {
 
 interface IncidentBranch {
   requestId: string;
+  orderKey: string;
   end: 'source' | 'target';
   other: RouteTerminal;
 }
@@ -84,8 +86,8 @@ function otherCenter(branch: IncidentBranch): RoutePoint {
 function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBranch[] {
   const branches: IncidentBranch[] = [];
   for (const request of requests) {
-    if (request.source.nodeId === nodeId) branches.push({ requestId: request.id, end: 'source', other: request.target });
-    if (request.target.nodeId === nodeId) branches.push({ requestId: request.id, end: 'target', other: request.source });
+    if (request.source.nodeId === nodeId) branches.push({ requestId: request.id, orderKey: stableRouteRequestOrderKey(request), end: 'source', other: request.target });
+    if (request.target.nodeId === nodeId) branches.push({ requestId: request.id, orderKey: stableRouteRequestOrderKey(request), end: 'target', other: request.source });
   }
   return branches;
 }
@@ -163,7 +165,7 @@ function buildConnectorGeometry(
   const offsets = connectorNearSpliceOffsets(branches.length);
   const sortedBranches = branches.slice().sort((left, right) => {
     const delta = transverseCoordinate(otherCenter(left), side) - transverseCoordinate(otherCenter(right), side);
-    return delta || left.requestId.localeCompare(right.requestId, undefined, { numeric: true });
+    return delta || left.orderKey.localeCompare(right.orderKey, undefined, { numeric: true });
   });
   const sortedOffsets = offsets.slice().sort((a, b) => a - b);
   const ports: GridSplicePortV3[] = [];
@@ -208,7 +210,7 @@ function buildFreeGeometry(
     const sideBranches = bySide.get(side)!;
     sideBranches.sort((left, right) => {
       const delta = transverseCoordinate(otherCenter(left), side) - transverseCoordinate(otherCenter(right), side);
-      return delta || left.requestId.localeCompare(right.requestId, undefined, { numeric: true });
+      return delta || left.orderKey.localeCompare(right.orderKey, undefined, { numeric: true });
     });
     const offsets = centeredIntegerOffsets(sideBranches.length);
     const physical = physicalOption(terminal, side);

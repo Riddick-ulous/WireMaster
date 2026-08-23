@@ -15,8 +15,32 @@ function numericCompare(left: string, right: string): number {
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-function requestOrderKey(request: RouteRequest): string {
-  return request.displayId ?? request.id;
+function terminalGeometryKey(terminal: RouteTerminal): string {
+  return terminal.options
+    .map((option) => `${option.side}:${option.point.x}:${option.point.y}`)
+    .sort(numericCompare)
+    .join(',');
+}
+
+/**
+ * Routing order must never depend on the electrical UUID. The display ID is
+ * the stable domain order; geometry is only a deterministic fallback for
+ * synthetic/test requests that do not carry one. Exact geometric ties compare
+ * equal and therefore retain the caller's stable input order.
+ */
+export function stableRouteRequestOrderKey(request: RouteRequest): string {
+  if (request.displayId) return `0:${request.displayId}`;
+  return [
+    '1',
+    terminalGeometryKey(request.source),
+    terminalGeometryKey(request.target),
+    request.sourceMinStraight ?? '',
+    request.targetMinStraight ?? '',
+  ].join('|');
+}
+
+export function compareRouteRequestsStable(left: RouteRequest, right: RouteRequest): number {
+  return numericCompare(stableRouteRequestOrderKey(left), stableRouteRequestOrderKey(right));
 }
 
 function displayId(nodeId: string, displayIds: ElementDisplayIds): string {
@@ -47,7 +71,7 @@ export function buildRouteBundles(requests: RouteRequest[], displayIds: ElementD
   }
 
   for (const bundle of grouped.values()) {
-    bundle.requests.sort((left, right) => numericCompare(requestOrderKey(left), requestOrderKey(right)) || numericCompare(left.id, right.id));
+    bundle.requests.sort(compareRouteRequestsStable);
   }
 
   return [...grouped.values()].sort((left, right) => {
@@ -87,8 +111,7 @@ export function bundleEndpointOrder(bundle: RouteBundle, elementId: string): str
   return terminals
     .slice()
     .sort((left, right) => representativeCoordinate(left.terminal, axis) - representativeCoordinate(right.terminal, axis)
-      || numericCompare(requestOrderKey(left.request), requestOrderKey(right.request))
-      || numericCompare(left.request.id, right.request.id))
+      || compareRouteRequestsStable(left.request, right.request))
     .map((item) => item.request.id);
 }
 

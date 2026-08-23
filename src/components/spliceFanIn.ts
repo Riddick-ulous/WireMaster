@@ -14,6 +14,7 @@ import {
   type RouteTerminalOption,
 } from './routingGeometry';
 import { CONNECTOR_NEAR_SPLICE_BODY_CLEARANCE_PX, CONNECTOR_SPLICE_STAGGER_PX, PIN_PITCH_PX } from './connectorNearSpliceLayout';
+import { stableRouteRequestOrderKey } from './routingBundles';
 
 export const SPLICE_PORT_PITCH = 18;
 export const SPLICE_FANIN_MIN_LENGTH = 28;
@@ -54,6 +55,7 @@ export interface ExpandedSpliceRouting {
 
 interface IncidentBranch {
   requestId: string;
+  orderKey: string;
   end: 'source' | 'target';
   other: RouteTerminal;
 }
@@ -289,8 +291,8 @@ function endpointDegrees(requests: RouteRequest[]): Map<string, { count: number;
 function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBranch[] {
   const result: IncidentBranch[] = [];
   for (const request of requests) {
-    if (request.source.nodeId === nodeId) result.push({ requestId: request.id, end: 'source', other: request.target });
-    if (request.target.nodeId === nodeId) result.push({ requestId: request.id, end: 'target', other: request.source });
+    if (request.source.nodeId === nodeId) result.push({ requestId: request.id, orderKey: stableRouteRequestOrderKey(request), end: 'source', other: request.target });
+    if (request.target.nodeId === nodeId) result.push({ requestId: request.id, orderKey: stableRouteRequestOrderKey(request), end: 'target', other: request.source });
   }
   return result;
 }
@@ -418,7 +420,7 @@ function assignLandingPorts(
   const assignments = new Map<string, RouteTerminalOption>();
   for (const [nodeId, geometry] of geometries) {
     const branches = incidentBranches(nodeId, requests)
-      .sort((left, right) => left.requestId.localeCompare(right.requestId, undefined, { numeric: true }) || left.end.localeCompare(right.end));
+      .sort((left, right) => left.orderKey.localeCompare(right.orderKey, undefined, { numeric: true }) || left.end.localeCompare(right.end));
     const costs = branches.map((branch) => geometry.ports.map((port, index) => landingCost(geometry, branch, port, obstacles, index)));
     const selected = minimumCostAssignment(costs);
     branches.forEach((branch, index) => {
@@ -443,7 +445,7 @@ function assignDirectConnectorPorts(
     if (!blockedSide) continue;
     const ports = degree.terminal.options.filter((option) => option.side !== blockedSide);
     const branches = incidentBranches(nodeId, requests)
-      .sort((left, right) => left.requestId.localeCompare(right.requestId, undefined, { numeric: true }) || left.end.localeCompare(right.end));
+      .sort((left, right) => left.orderKey.localeCompare(right.orderKey, undefined, { numeric: true }) || left.end.localeCompare(right.end));
     const center = centerOfTerminal(degree.terminal);
     const costs = branches.map((branch) => ports.map((port, index) => directLandingCost(nodeId, center, branch, port, obstacles, index)));
     const selected = minimumCostAssignment(costs);

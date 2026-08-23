@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVehicleStressDemoProject, createVehicleWireAssignments, VEHICLE_BUNDLE_SPECS, VEHICLE_CONNECTOR_SPECS } from '../../core/vehicleStressDemo';
 import { buildRouteBundles, bundleEndpointOrder, permutationInversions } from '../routingBundles';
+import type { RouteRequest } from '../routingGeometry';
 import { createPackedVehicleStressLayout, createVehicleStressRoutingFixture } from '../vehicleStressRoutingFixture';
 import { buildViewerConnectorLayoutsV3 } from '../viewerConnectorLayoutV3';
 
@@ -79,6 +80,20 @@ describe('vehicle subharness stress fixture', () => {
       const [ra, rb] = right.split('-');
       return la.localeCompare(ra, undefined, { numeric: true }) || lb.localeCompare(rb, undefined, { numeric: true });
     }));
+  });
+
+  it('never uses electrical UUIDs to break an otherwise equal wire-order tie', () => {
+    const requests = (ids: [string, string]): RouteRequest[] => ['W2', 'W1'].map((displayId, index) => ({
+      id: ids[index],
+      displayId,
+      source: { nodeId: 'C1', options: [{ key: `${displayId}-a`, side: 'right', point: { x: 0, y: 28 } }] },
+      target: { nodeId: 'C2', options: [{ key: `${displayId}-b`, side: 'left', point: { x: 280, y: 28 } }] },
+    }));
+    const first = buildRouteBundles(requests(['ffffffff-ffff-4fff-8fff-ffffffffffff', '00000000-0000-4000-8000-000000000000']))[0];
+    const swapped = buildRouteBundles(requests(['00000000-0000-4000-8000-000000000000', 'ffffffff-ffff-4fff-8fff-ffffffffffff']))[0];
+
+    expect(first.requests.map((request) => request.displayId)).toEqual(['W1', 'W2']);
+    expect(swapped.requests.map((request) => request.displayId)).toEqual(['W1', 'W2']);
   });
 
   it('places bundle cavities into contiguous movable viewer blocks without changing electrical cavity identity', () => {

@@ -18,6 +18,7 @@ import {
   type RouteTerminal,
 } from './routingGeometry';
 import { expandSpliceFanInRouting, finalizeSpliceFanInRoutes } from './spliceFanIn';
+import { compareRouteRequestsStable } from './routingBundles';
 
 interface BatchMetric { unrouted: number; crossings: number; churn: number; bends: number; length: number }
 interface PlannedSet { routes: Map<string, OrthogonalRouteResult>; metric: BatchMetric }
@@ -254,16 +255,16 @@ function center(terminal: RouteTerminal): RoutePoint {
   return { x: terminal.options.reduce((sum, option) => sum + option.point.x, 0) / terminal.options.length, y: terminal.options.reduce((sum, option) => sum + option.point.y, 0) / terminal.options.length };
 }
 function span(request: RouteRequest): number { return manhattan(center(request.source), center(request.target)) }
-function byId(left: RouteRequest, right: RouteRequest): number { return left.id.localeCompare(right.id, undefined, { numeric: true }) }
+function byStableOrder(left: RouteRequest, right: RouteRequest): number { return compareRouteRequestsStable(left, right) }
 
 function orders(requests: RouteRequest[]): RouteRequest[][] {
   const coordinate = (request: RouteRequest) => { const a = center(request.source); const b = center(request.target); return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
   return [
-    requests.slice().sort((a, b) => span(b) - span(a) || byId(a, b)),
-    requests.slice().sort((a, b) => span(a) - span(b) || byId(a, b)),
-    requests.slice().sort((a, b) => coordinate(a).y - coordinate(b).y || coordinate(a).x - coordinate(b).x || byId(a, b)),
-    requests.slice().sort((a, b) => coordinate(a).x - coordinate(b).x || coordinate(a).y - coordinate(b).y || byId(a, b)),
-    requests.slice().sort(byId),
+    requests.slice().sort((a, b) => span(b) - span(a) || byStableOrder(a, b)),
+    requests.slice().sort((a, b) => span(a) - span(b) || byStableOrder(a, b)),
+    requests.slice().sort((a, b) => coordinate(a).y - coordinate(b).y || coordinate(a).x - coordinate(b).x || byStableOrder(a, b)),
+    requests.slice().sort((a, b) => coordinate(a).x - coordinate(b).x || coordinate(a).y - coordinate(b).y || byStableOrder(a, b)),
+    requests.slice().sort(byStableOrder),
   ];
 }
 
@@ -334,7 +335,7 @@ function repairUnroutedRoutes(
   obstacles: RouteObstacle[],
 ): Map<string, OrthogonalRouteResult> {
   const routes = new Map(initial);
-  const orderedRequests = requests.slice().sort(byId);
+  const orderedRequests = requests.slice().sort(byStableOrder);
 
   for (let pass = 0; pass < RIPUP_MAX_PASSES; pass += 1) {
     let changed = false;

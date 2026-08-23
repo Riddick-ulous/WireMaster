@@ -34,14 +34,17 @@ export function selectConnectorFanoutApronRecoveryV3(
   }
   const maximum = Math.max(0, ...failures.values());
   if (maximum < 2) return new Set();
-  return new Set([...failures]
-    .filter(([, count]) => count === maximum)
-    .map(([nodeId]) => nodeId));
+  // Recovery is deliberately local. In a tie, preserve the caller's stable
+  // connector order and promote only the first hotspot instead of widening
+  // the experimental apron to multiple connector fronts at once.
+  const selected = [...connectorNodeIds].find((nodeId) => failures.get(nodeId) === maximum);
+  return selected ? new Set([selected]) : new Set();
 }
 
 /**
  * Promotion experiment: local connector fanout followed by the tolerant global
- * router. The 40-splice fixture currently routes 149/180, below the hard
+ * router. With terminal-owned landing runways the 40-splice fixture currently
+ * routes 147/180, below the hard
  * 160/180 gate, so this composition is intentionally not the candidate main
  * path yet.
  */
@@ -72,7 +75,7 @@ export function planBundleGridRoutesV3FanoutTolerantExperimentWithSplices(
 
 /**
  * Same stepped connector turn lanes, plus a hard global-router keepout over
- * the local fanout. Kept separate so the 149/180 reference experiment remains
+ * the local fanout. Kept separate so the below-gate reference remains
  * reproducible while apron ownership is evaluated selectively.
  */
 export function planBundleGridRoutesV3FanoutApronExperimentWithSplices(

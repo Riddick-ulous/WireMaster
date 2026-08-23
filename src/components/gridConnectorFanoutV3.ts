@@ -10,11 +10,12 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
-import { buildRouteBundles, type ElementDisplayIds } from './routingBundles';
+import { buildRouteBundles, stableRouteRequestOrderKey, type ElementDisplayIds } from './routingBundles';
 import type { GridAlignmentV3 } from './gridSpliceAdapterV3';
 
 interface IncidentBranch {
   requestId: string;
+  orderKey: string;
   end: 'source' | 'target';
   terminal: RouteTerminal;
   other: RouteTerminal;
@@ -169,6 +170,7 @@ function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBra
     if (request.source.nodeId === nodeId) {
       out.push({
         requestId: request.id,
+        orderKey: stableRouteRequestOrderKey(request),
         end: 'source',
         terminal: request.source,
         other: request.target,
@@ -178,6 +180,7 @@ function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBra
     if (request.target.nodeId === nodeId) {
       out.push({
         requestId: request.id,
+        orderKey: stableRouteRequestOrderKey(request),
         end: 'target',
         terminal: request.target,
         other: request.source,
@@ -198,12 +201,12 @@ function groupBranches(branches: IncidentBranch[], physicalSide: CardinalSide): 
   return [...byRemote.values()]
     .map((group) => group.slice().sort((left, right) => {
       const delta = transverse(physicalOption(left).point, physicalSide) - transverse(physicalOption(right).point, physicalSide);
-      return delta || numericCompare(left.requestId, right.requestId);
+      return delta || numericCompare(left.orderKey, right.orderKey);
     }))
     .sort((left, right) => {
       const l = left.reduce((sum, branch) => sum + transverse(physicalOption(branch).point, physicalSide), 0) / left.length;
       const r = right.reduce((sum, branch) => sum + transverse(physicalOption(branch).point, physicalSide), 0) / right.length;
-      return l - r || numericCompare(left[0].requestId, right[0].requestId);
+      return l - r || numericCompare(left[0].orderKey, right[0].orderKey);
     });
 }
 
@@ -259,7 +262,7 @@ function orderGroupForLane(
   physicalSide: CardinalSide,
   escapeSide: CardinalSide,
 ): IncidentBranch[] {
-  const ascendingIds = group.slice().sort((left, right) => numericCompare(left.requestId, right.requestId));
+  const ascendingIds = group.slice().sort((left, right) => numericCompare(left.orderKey, right.orderKey));
   // Global corridor ordering is measured along rightNormal(travelDirection).
   // At A, travel direction is the local outward direction. At B, travel direction
   // is inward, so the local outward projection is reversed.

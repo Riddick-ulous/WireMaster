@@ -11,7 +11,7 @@ import {
   type RouteRequest,
   type RouteTerminalOption,
 } from './routingGeometry';
-import { buildRouteBundles, type ElementDisplayIds, type RouteBundle } from './routingBundles';
+import { buildRouteBundles, compareRouteRequestsStable, type ElementDisplayIds, type RouteBundle } from './routingBundles';
 
 export const GLOBAL_BUNDLE_GRID_SIZE = 28;
 const EPS = 0.25;
@@ -458,7 +458,7 @@ function planBundle(
   const sourceNormal = rightNormal(startDir);
   const targetNormal = rightNormal(targetDir);
 
-  items.sort((left, right) => projection(left.a.node, sourceNormal) - projection(right.a.node, sourceNormal) || left.request.id.localeCompare(right.request.id, undefined, { numeric: true }));
+  items.sort((left, right) => projection(left.a.node, sourceNormal) - projection(right.a.node, sourceNormal) || compareRouteRequestsStable(left.request, right.request));
   const sourceRef = items[0].a.node;
   const targetRef = items.reduce((best, item) => projection(item.b.node, targetNormal) < projection(best.b.node, targetNormal) ? item : best).b.node;
 

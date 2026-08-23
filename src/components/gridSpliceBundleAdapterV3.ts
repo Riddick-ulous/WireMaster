@@ -11,11 +11,12 @@ import {
   type RouteTerminal,
   type RouteTerminalOption,
 } from './routingGeometry';
-import { buildRouteBundles, type ElementDisplayIds } from './routingBundles';
+import { buildRouteBundles, stableRouteRequestOrderKey, type ElementDisplayIds } from './routingBundles';
 import type { GridAlignmentV3 } from './gridSpliceAdapterV3';
 
 interface IncidentBranch {
   requestId: string;
+  orderKey: string;
   end: 'source' | 'target';
   other: RouteTerminal;
 }
@@ -94,8 +95,8 @@ function otherCenter(branch: IncidentBranch): RoutePoint {
 function incidentBranches(nodeId: string, requests: RouteRequest[]): IncidentBranch[] {
   const branches: IncidentBranch[] = [];
   for (const request of requests) {
-    if (request.source.nodeId === nodeId) branches.push({ requestId: request.id, end: 'source', other: request.target });
-    if (request.target.nodeId === nodeId) branches.push({ requestId: request.id, end: 'target', other: request.source });
+    if (request.source.nodeId === nodeId) branches.push({ requestId: request.id, orderKey: stableRouteRequestOrderKey(request), end: 'source', other: request.target });
+    if (request.target.nodeId === nodeId) branches.push({ requestId: request.id, orderKey: stableRouteRequestOrderKey(request), end: 'target', other: request.source });
   }
   return branches;
 }
@@ -182,11 +183,11 @@ function groupedByRemote(branches: IncidentBranch[]): IncidentBranch[][] {
 
 function sortedGroupsForSide(groups: IncidentBranch[][], side: CardinalSide): IncidentBranch[][] {
   return groups
-    .map((group) => group.slice().sort((left, right) => numericCompare(left.requestId, right.requestId)))
+    .map((group) => group.slice().sort((left, right) => numericCompare(left.orderKey, right.orderKey)))
     .sort((left, right) => {
       const l = left.reduce((sum, branch) => sum + transverseCoordinate(otherCenter(branch), side), 0) / left.length;
       const r = right.reduce((sum, branch) => sum + transverseCoordinate(otherCenter(branch), side), 0) / right.length;
-      return l - r || numericCompare(left[0].requestId, right[0].requestId);
+      return l - r || numericCompare(left[0].orderKey, right[0].orderKey);
     });
 }
 
@@ -212,7 +213,7 @@ function offsetProjectionDirection(side: CardinalSide): number {
 }
 
 function orderGroupForOffsets(group: IncidentBranch[], role: BundleRole, side: CardinalSide): IncidentBranch[] {
-  const ascendingIds = group.slice().sort((left, right) => numericCompare(left.requestId, right.requestId));
+  const ascendingIds = group.slice().sort((left, right) => numericCompare(left.orderKey, right.orderKey));
   const idsAscWithOutwardProjection = role === 'A';
   const offsetsAscWithOutwardProjection = offsetProjectionDirection(side) > 0;
   return idsAscWithOutwardProjection === offsetsAscWithOutwardProjection

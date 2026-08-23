@@ -182,7 +182,25 @@ The individual fallback is allowed to produce a partially routed bundle when tha
 
 If a later bundle is `UNROUTED`, bounded rip-up / reroute may remove a small number of lower-priority bundles and retry. A lower-priority bundle must never permanently displace a higher-priority larger bundle unless the alternative improves the global number of routed wires without violating hard rules.
 
-Terminal portal access is protected globally so an earlier bundle cannot consume the mandatory exit geometry of a later connector cavity.
+Every virtual egress owns a temporary landing runway covering the first two
+28 px grid edges in its outward direction. Until that terminal's final routing
+attempt, another wire may cross this runway only as a straight 90-degree
+crossing. It may not occupy a runway edge longitudinally and may not bend at a
+runway node. This prevents an earlier corridor from turning immediately in
+front of a later egress and turning the remaining one-grid approach into a
+cul-de-sac.
+
+The owner guard is detached for its final search. On success, the complete
+egress-to-runway path is claimed by the normal permanent wire reservation. On
+final failure, the temporary guard is also discarded so an `UNROUTED` request
+cannot leave a ghost keepout for later requests. Plan diagnostics report
+created, released and remaining runway reservations; a completed planning pass
+must have zero remaining guards.
+
+Electrical UUIDs are identity and map keys only. They must never participate in
+routing, fanout, splice-slot or corridor-order tie-breaks. Stable wire display
+order is used when available; synthetic requests without one fall back to
+terminal geometry and preserve stable input order for exact ties.
 
 ## 8. Objective order
 
@@ -243,9 +261,10 @@ The existing 50 × 15 / 375-wire synthetic benchmark remains useful as a raw thr
 
 Current deterministic 40-splice checkpoint:
 
-- tolerant router + bundle-aware contiguous splice egresses: `175/180` (candidate main path),
+- tolerant router + bundle-aware contiguous splice egresses + terminal-owned 2G runways: `165/180` (candidate main path),
 - promotion gate for any connector-fanout composition: at least `160/180`,
-- tolerant router + connector fanout + bundle-aware splice egresses: `149/180` (rejected as main path),
+- tolerant router + connector fanout + bundle-aware splice egresses: `147/180` when enabled globally (rejected as main path),
+- selective C2 tapered-apron recovery with the runway contract: `168/180` on the deterministic routing fixture and `164/180` on the exact editable viewer fixture; C2 cavities 6/7 and C4-S34 are routed,
 - pure-bundle router + connector fanout: `120/180` (retained experiment),
 - transformed endpoint-pair groups routable in isolation: `73/73`.
 
